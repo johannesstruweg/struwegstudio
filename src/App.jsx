@@ -6,11 +6,74 @@ const IntelligentEmergence = () => {
   const [sessionTime, setSessionTime] = useState(0);
   const animationRef = useRef(null);
   const startTimeRef = useRef(Date.now());
+  const lastTimeRef = useRef(Date.now()); // New: Track time for delta calculation
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const ctx = canvas.getContext('2d');
     
+    // --- PathTracer Class with time-dependent update ---
+    class PathTracer {
+      constructor(index, total) {
+        const phase = (index / total) * Math.PI * 2;
+        this.x = Math.cos(phase) * 2;
+        this.y = Math.sin(phase) * 2;
+        this.prevX = this.x;
+        this.prevY = this.y;
+        this.colorOffset = (index / total) * 30;
+      }
+
+      // MODIFIED: Accepts deltaTime for smooth, frame-rate independent movement
+      update(a, b, c, d, deltaTime) {
+        // Use multiple substeps to approximate continuous integration
+        const substeps = 5; 
+        // Normalize the delta time to a factor of 60 FPS (1000ms/60 ~= 16.666ms)
+        const stepFactor = 0.1 * (deltaTime / 16.666) / substeps; 
+        
+        for (let i = 0; i < substeps; i++) {
+          this.prevX = this.x;
+          this.prevY = this.y;
+          
+          // The Attractor function (similar to the Clifford Attractor)
+          const newX = Math.sin(a * this.y) - Math.cos(b * this.x);
+          const newY = Math.sin(c * this.x) - Math.cos(d * this.y);
+          
+          // Smoother integration: move towards the new point, scaled by time
+          this.x = this.x + (newX - this.x) * stepFactor;
+          this.y = this.y + (newY - this.y) * stepFactor;
+        }
+      }
+
+      draw(ctx, centerX, centerY, scale, symmetry, baseHue, alpha) {
+        ctx.lineWidth = 1;
+        ctx.lineCap = 'round';
+        
+        for (let i = 0; i < symmetry; i++) {
+          const angle = (i * Math.PI * 2) / symmetry;
+          
+          const prevRotX = this.prevX * Math.cos(angle) - this.prevY * Math.sin(angle);
+          const prevRotY = this.prevX * Math.sin(angle) + this.prevY * Math.cos(angle);
+          
+          const currRotX = this.x * Math.cos(angle) - this.y * Math.sin(angle);
+          const currRotY = this.x * Math.sin(angle) + this.y * Math.cos(angle);
+          
+          const prevScreenX = centerX + prevRotX * scale;
+          const prevScreenY = centerY + prevRotY * scale;
+          const currScreenX = centerX + currRotX * scale;
+          const currScreenY = centerY + currRotY * scale;
+          
+          const hue = (baseHue + this.colorOffset) % 360;
+          
+          ctx.strokeStyle = `hsla(${hue}, 65%, 55%, ${alpha * 0.7})`;
+          ctx.beginPath();
+          ctx.moveTo(prevScreenX, prevScreenY);
+          ctx.lineTo(currScreenX, currScreenY);
+          ctx.stroke();
+        }
+      }
+    }
+    // --- End PathTracer Class ---
+
     // Responsive canvas sizing
     const resizeCanvas = () => {
       canvas.width = window.innerWidth;
@@ -33,123 +96,60 @@ const IntelligentEmergence = () => {
       setSessionTime((Date.now() - startTimeRef.current) / 1000);
     }, 100);
 
-    // Single continuous curve that traces the attractor
-    class AttractorCurve {
-      constructor() {
-        this.points = [];
-        this.maxPoints = 3000;
-        this.x = 0.1;
-        this.y = 0.1;
-      }
-
-      update(a, b, c, d) {
-        const newX = Math.sin(a * this.y) - Math.cos(b * this.x);
-        const newY = Math.sin(c * this.x) - Math.cos(d * this.y);
-        
-        this.x = newX;
-        this.y = newY;
-        
-        this.points.push({ x: this.x, y: this.y });
-        
-        if (this.points.length > this.maxPoints) {
-          this.points.shift();
-        }
-      }
-
-      draw(ctx, centerX, centerY, scale, symmetry, hue) {
-        if (this.points.length < 2) return;
-        
-        const pointCount = this.points.length;
-        
-        for (let sym = 0; sym < symmetry; sym++) {
-          const angle = (sym * Math.PI * 2) / symmetry;
-          
-          ctx.beginPath();
-          
-          for (let i = 0; i < pointCount; i++) {
-            const point = this.points[i];
-            const opacity = (i / pointCount) * 0.4;
-            
-            // Rotate point
-            const rotX = point.x * Math.cos(angle) - point.y * Math.sin(angle);
-            const rotY = point.x * Math.sin(angle) + point.y * Math.cos(angle);
-            
-            const screenX = centerX + rotX * scale;
-            const screenY = centerY + rotY * scale;
-            
-            if (i === 0) {
-              ctx.moveTo(screenX, screenY);
-            } else {
-              ctx.lineTo(screenX, screenY);
-            }
-          }
-          
-          const gradient = ctx.createLinearGradient(centerX - scale, centerY, centerX + scale, centerY);
-          gradient.addColorStop(0, `hsla(${hue}, 70%, 60%, 0.05)`);
-          gradient.addColorStop(0.5, `hsla(${hue + 20}, 70%, 65%, 0.3)`);
-          gradient.addColorStop(1, `hsla(${hue}, 70%, 60%, 0.05)`);
-          
-          ctx.strokeStyle = gradient;
-          ctx.lineWidth = 1;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          ctx.stroke();
-        }
-      }
+    const particleCount = 400;
+    const tracers = [];
+    for (let i = 0; i < particleCount; i++) {
+      tracers.push(new PathTracer(i, particleCount));
     }
-
-    const curve = new AttractorCurve();
-    let frameCount = 0;
-
-    const animate = () => {
+    
+    // Initial clear
+    ctx.fillStyle = '#0a0a0f';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    const animate = (timestamp) => {
+      const now = Date.now();
+      const deltaTime = now - lastTimeRef.current; // Calculate time elapsed
+      lastTimeRef.current = now; // Store current time for next frame
+      
       const centerX = canvas.width / 2;
       const centerY = canvas.height / 2;
       
-      // Very gentle fade for smooth trails
-      ctx.fillStyle = 'rgba(10, 10, 15, 0.02)';
+      // FIXED: Always apply a small, consistent fade
+      ctx.fillStyle = 'rgba(10, 10, 15, 0.015)'; // Consistent fade alpha
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Slow, smooth parameter evolution
-      const time = Date.now() * 0.00001;
+      
+      // Adaptive parameters - based on total elapsed time, not frame time
+      const time = now * 0.00002;
       
       const baseA = 1.4;
       const baseB = -2.3;
       const baseC = 2.4;
       const baseD = -2.1;
       
-      const scrollInfluence = scrollDepth * 0.2;
-      const timeInfluence = Math.min(sessionTime / 120, 1) * 0.1;
-      const drift = Math.sin(time) * 0.05;
+      const scrollInfluence = scrollDepth * 0.25;
+      const timeInfluence = Math.min(sessionTime / 60, 1) * 0.15;
+      const timeOfDay = Math.sin(time) * 0.08;
       
-      const a = baseA + scrollInfluence + drift;
-      const b = baseB + timeInfluence;
-      const c = baseC - scrollInfluence * 0.2;
-      const d = baseD + Math.cos(time * 0.8) * 0.08;
+      const a = baseA + scrollInfluence + timeOfDay;
+      const b = baseB + timeInfluence * 0.4;
+      const c = baseC - scrollInfluence * 0.25;
+      const d = baseD + Math.cos(time * 0.6) * 0.12;
       
-      // Gentle symmetry growth
-      const symmetry = Math.floor(3 + scrollDepth * 2 + timeInfluence * 2);
+      const symmetry = Math.floor(3 + scrollDepth * 3 + timeInfluence * 2);
       
-      // Subtle color shift
-      const hue = 200 + scrollDepth * 30 + Math.sin(time * 0.3) * 10;
-      
-      const scale = Math.min(canvas.width, canvas.height) * 0.25;
+      const hue = 200 + scrollDepth * 40 + Math.sin(time * 0.4) * 15;
+      const scale = Math.min(canvas.width, canvas.height) * 0.22;
+      const alpha = 0.35 + scrollDepth * 0.25;
 
-      // Update every frame for smooth motion
-      curve.update(a, b, c, d);
-      
-      // Draw every 2 frames to reduce intensity
-      if (frameCount % 2 === 0) {
-        curve.draw(ctx, centerX, centerY, scale, symmetry, hue);
-      }
-      
-      frameCount++;
+      // MODIFIED: Pass deltaTime to the update function
+      tracers.forEach(tracer => {
+        tracer.update(a, b, c, d, deltaTime); 
+        tracer.draw(ctx, centerX, centerY, scale, symmetry, hue, alpha);
+      });
+
       animationRef.current = requestAnimationFrame(animate);
     };
 
-    // Initial dark background
-    ctx.fillStyle = '#0a0a0f';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
     animate();
 
     return () => {
@@ -162,6 +162,7 @@ const IntelligentEmergence = () => {
     };
   }, [scrollDepth, sessionTime]);
 
+  // The rest of your component remains the same
   return (
     <div className="relative w-full min-h-screen bg-[#0a0a0f] overflow-x-hidden">
       {/* Attractor Canvas */}
@@ -199,7 +200,7 @@ const IntelligentEmergence = () => {
               This is design as conversation. Mathematics as communication. Beauty as intelligence.
             </p>
             <div className="pt-6 flex gap-6 text-sm font-mono text-gray-400">
-              <div>Symmetry: {Math.floor(3 + scrollDepth * 2 + Math.min(sessionTime / 120, 1) * 2)}-fold</div>
+              <div>Symmetry: {Math.floor(3 + scrollDepth * 3 + Math.min(sessionTime / 60, 1) * 2)}-fold</div>
               <div>Depth: {Math.floor(scrollDepth * 100)}%</div>
               <div>Time: {Math.floor(sessionTime)}s</div>
             </div>
