@@ -4,8 +4,9 @@ import React, { useEffect, useRef, useState } from 'react';
 class PathTracer {
   constructor(index, total) {
     const phase = (index / total) * Math.PI * 2;
-    this.x = Math.cos(phase) * 0.1; 
-    this.y = Math.sin(phase) * 0.1;
+    // Initial position slightly dispersed
+    this.x = Math.cos(phase) * 0.5; 
+    this.y = Math.sin(phase) * 0.5;
     this.prevX = this.x;
     this.prevY = this.y;
   }
@@ -13,8 +14,9 @@ class PathTracer {
   // Time-scaled update for smooth motion (Crucial for silkiness)
   update(a, b, c, d, deltaTime) {
     const substeps = 5; 
-    // Increased speed factor for faster, silkier movement
-    const speedFactor = 0.15 * (deltaTime / 16.666) / substeps; 
+    // AGGRESSIVELY increased speed factor (0.3 instead of 0.15)
+    // This forces movement out of the central cluster.
+    const speedFactor = 0.3 * (deltaTime / 16.666) / substeps; 
 
     for (let i = 0; i < substeps; i++) {
       this.prevX = this.x;
@@ -24,6 +26,7 @@ class PathTracer {
       const newX = Math.sin(a * this.y) - Math.cos(b * this.x);
       const newY = Math.sin(c * this.x) - Math.cos(d * this.y);
       
+      // Time-scaled integration
       this.x = this.x + (newX - this.x) * speedFactor;
       this.y = this.y + (newY - this.y) * speedFactor;
     }
@@ -102,7 +105,7 @@ const IntelligentEmergence = () => {
     const timeInterval = setInterval(updateSessionTime, 100);
 
     // --- Animation Setup ---
-    const particleCount = 2000; // High count to define the structure
+    const particleCount = 2000; 
     const tracers = Array.from({ length: particleCount }, (_, i) => 
       new PathTracer(i, particleCount)
     );
@@ -118,7 +121,7 @@ const IntelligentEmergence = () => {
       const currentScrollDepth = scrollDepthRef.current;
       const currentSessionTime = sessionTimeRef.current;
       
-      // 1. Full Canvas Clear (NO TRAILS)
+      // 1. Full Canvas Clear 
       ctx.fillStyle = '#010105'; 
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -138,10 +141,11 @@ const IntelligentEmergence = () => {
       const d = baseD + Math.cos(globalTime * 0.7) * 0.15;
       
       // Visual Parameters 
-      const symmetry = Math.floor(3 + currentScrollDepth * 4 + timeInfluence * 3); 
-      const scale = Math.min(canvas.width, canvas.height) * 0.3; 
+      // LOCKED Symmetry to 8 for immediate complexity
+      const symmetry = 8; 
+      const scale = Math.min(canvas.width, canvas.height) * 0.35; // Increased scale for prominence
 
-      // 3. Update UI State
+      // 3. Update UI State (still dynamic based on influence)
       setUiParams({
         symmetry: symmetry,
         depth: Math.floor(currentScrollDepth * 100),
@@ -150,7 +154,6 @@ const IntelligentEmergence = () => {
 
       // 4. Update and Draw Tracers
       const center = { x: centerX, y: centerY };
-      // Pass only necessary drawing params (no hue/alpha needed)
       tracers.forEach(tracer => {
         tracer.update(a, b, c, d, deltaTime);
         tracer.draw(ctx, center, scale, symmetry); 
