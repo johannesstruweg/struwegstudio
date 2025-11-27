@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-// --- PathTracer Class (Pure Dots) ---
+// --- PathTracer Class (Pure Dots with Aggressive Speed) ---
 class PathTracer {
   constructor(index, total) {
     const phase = (index / total) * Math.PI * 2;
@@ -14,31 +14,25 @@ class PathTracer {
   // Time-scaled update for smooth motion (Crucial for silkiness)
   update(a, b, c, d, deltaTime) {
     const substeps = 5; 
-    // AGGRESSIVELY increased speed factor (0.3 instead of 0.15)
-    // This forces movement out of the central cluster.
+    // AGGRESSIVE speed factor
     const speedFactor = 0.3 * (deltaTime / 16.666) / substeps; 
 
     for (let i = 0; i < substeps; i++) {
       this.prevX = this.x;
       this.prevY = this.y;
       
-      // The Attractor Equation
       const newX = Math.sin(a * this.y) - Math.cos(b * this.x);
       const newY = Math.sin(c * this.x) - Math.cos(d * this.y);
       
-      // Time-scaled integration
       this.x = this.x + (newX - this.x) * speedFactor;
       this.y = this.y + (newY - this.y) * speedFactor;
     }
   }
 
-  // MODIFIED: Draws only a single, solid dot
+  // Draws only a single, solid dot
   draw(ctx, center, scale, symmetry) {
     
-    // Ensure absolutely no blur or shadow artifacts
     ctx.shadowBlur = 0; 
-    
-    // Fixed color for simplicity and high contrast
     ctx.fillStyle = '#66FFFF'; // Bright Cyan
     
     for (let i = 0; i < symmetry; i++) {
@@ -71,7 +65,7 @@ const IntelligentEmergence = () => {
   const startTimeRef = useRef(Date.now());
 
   const [uiParams, setUiParams] = useState({
-    symmetry: 3,
+    symmetry: 8,
     depth: 0,
     time: 0,
   });
@@ -85,7 +79,7 @@ const IntelligentEmergence = () => {
     const resizeCanvas = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-      ctx.fillStyle = '#010105'; // Deep black background
+      ctx.fillStyle = '#010105';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     };
     window.addEventListener('resize', resizeCanvas);
@@ -121,14 +115,13 @@ const IntelligentEmergence = () => {
       const currentScrollDepth = scrollDepthRef.current;
       const currentSessionTime = sessionTimeRef.current;
       
-      // 1. Full Canvas Clear 
-      ctx.fillStyle = '#010105'; 
+      // 1. Background Clear (REINTRODUCED TRAILS - Ultra Low Alpha is key for silkiness)
+      ctx.fillStyle = 'rgba(1, 1, 5, 0.004)'; // Extremely low alpha for long, delicate trails
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // 2. Adaptive Parameters 
       const globalTime = now * 0.00002;
       
-      // Attractor Constants tuned for complexity
       const [baseA, baseB, baseC, baseD] = [1.7, -1.9, 2.2, -1.8]; 
       
       const scrollInfluence = currentScrollDepth * 0.25;
@@ -141,11 +134,10 @@ const IntelligentEmergence = () => {
       const d = baseD + Math.cos(globalTime * 0.7) * 0.15;
       
       // Visual Parameters 
-      // LOCKED Symmetry to 8 for immediate complexity
-      const symmetry = 8; 
-      const scale = Math.min(canvas.width, canvas.height) * 0.35; // Increased scale for prominence
+      const symmetry = Math.floor(8 + currentScrollDepth * 4 + timeInfluence * 3); 
+      const scale = Math.min(canvas.width, canvas.height) * 0.35; 
 
-      // 3. Update UI State (still dynamic based on influence)
+      // 3. Update UI State
       setUiParams({
         symmetry: symmetry,
         depth: Math.floor(currentScrollDepth * 100),
