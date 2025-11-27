@@ -1,157 +1,182 @@
 import React, { useEffect, useRef, useState } from 'react';
 
+// --- 1. PathTracer Class (Outside of Component) ---
+// Moving this out improves clarity and prevents unnecessary re-creation.
+class PathTracer {
+  constructor(index, total) {
+    const phase = (index / total) * Math.PI * 2;
+    // Start particles slightly offset from the origin
+    this.x = Math.cos(phase) * 0.01; 
+    this.y = Math.sin(phase) * 0.01;
+    this.prevX = this.x;
+    this.prevY = this.y;
+    this.colorOffset = (index / total) * 30;
+  }
+
+  // Update using the difference equation for a smooth, time-scaled step
+  update(a, b, c, d, deltaTime) {
+    // Substeps and scaling for frame-rate independence (deltaTime is in ms)
+    const substeps = 5; 
+    const speedFactor = 0.1 * (deltaTime / 16.666) / substeps; 
+
+    for (let i = 0; i < substeps; i++) {
+      this.prevX = this.x;
+      this.prevY = this.y;
+      
+      // The Chaotic Attractor function (Clifford/Swirl variant)
+      const newX = Math.sin(a * this.y) - Math.cos(b * this.x);
+      const newY = Math.sin(c * this.x) - Math.cos(d * this.y);
+      
+      // Integration step: move towards the new state
+      this.x = this.x + (newX - this.x) * speedFactor;
+      this.y = this.y + (newY - this.y) * speedFactor;
+    }
+  }
+
+  // Drawing logic remains clean
+  draw(ctx, center, scale, symmetry, baseHue, alpha) {
+    ctx.lineWidth = 1;
+    ctx.lineCap = 'round';
+    
+    for (let i = 0; i < symmetry; i++) {
+      const angle = (i * Math.PI * 2) / symmetry;
+      
+      // Helper function for rotation
+      const rotate = (px, py, ang) => ({
+        x: px * Math.cos(ang) - py * Math.sin(ang),
+        y: px * Math.sin(ang) + py * Math.cos(ang),
+      });
+
+      const prevRot = rotate(this.prevX, this.prevY, angle);
+      const currRot = rotate(this.x, this.y, angle);
+      
+      const prevScreenX = center.x + prevRot.x * scale;
+      const prevScreenY = center.y + prevRot.y * scale;
+      const currScreenX = center.x + currRot.x * scale;
+      const currScreenY = center.y + currRot.y * scale;
+      
+      const hue = (baseHue + this.colorOffset) % 360;
+      
+      ctx.strokeStyle = `hsla(${hue}, 65%, 55%, ${alpha * 0.7})`;
+      ctx.beginPath();
+      ctx.moveTo(prevScreenX, prevScreenY);
+      ctx.lineTo(currScreenX, currScreenY);
+      ctx.stroke();
+    }
+  }
+}
+
+// --- 2. React Component ---
 const IntelligentEmergence = () => {
   const canvasRef = useRef(null);
-  const [scrollDepth, setScrollDepth] = useState(0);
-  const [sessionTime, setSessionTime] = useState(0);
   const animationRef = useRef(null);
+  
+  // Use Refs for animation parameters to avoid re-rendering the effect
+  const scrollDepthRef = useRef(0);
+  const sessionTimeRef = useRef(0);
+  const lastTimeRef = useRef(Date.now());
   const startTimeRef = useRef(Date.now());
-  const lastTimeRef = useRef(Date.now()); // New: Track time for delta calculation
+
+  // State is now only used for UI display, keeping the rendering loop clean
+  const [uiParams, setUiParams] = useState({
+    symmetry: 3,
+    depth: 0,
+    time: 0,
+  });
 
   useEffect(() => {
     const canvas = canvasRef.current;
+    if (!canvas) return; // Guard clause
     const ctx = canvas.getContext('2d');
     
-    // --- PathTracer Class with time-dependent update ---
-    class PathTracer {
-      constructor(index, total) {
-        const phase = (index / total) * Math.PI * 2;
-        this.x = Math.cos(phase) * 2;
-        this.y = Math.sin(phase) * 2;
-        this.prevX = this.x;
-        this.prevY = this.y;
-        this.colorOffset = (index / total) * 30;
-      }
-
-      // MODIFIED: Accepts deltaTime for smooth, frame-rate independent movement
-      update(a, b, c, d, deltaTime) {
-        // Use multiple substeps to approximate continuous integration
-        const substeps = 5; 
-        // Normalize the delta time to a factor of 60 FPS (1000ms/60 ~= 16.666ms)
-        const stepFactor = 0.1 * (deltaTime / 16.666) / substeps; 
-        
-        for (let i = 0; i < substeps; i++) {
-          this.prevX = this.x;
-          this.prevY = this.y;
-          
-          // The Attractor function (similar to the Clifford Attractor)
-          const newX = Math.sin(a * this.y) - Math.cos(b * this.x);
-          const newY = Math.sin(c * this.x) - Math.cos(d * this.y);
-          
-          // Smoother integration: move towards the new point, scaled by time
-          this.x = this.x + (newX - this.x) * stepFactor;
-          this.y = this.y + (newY - this.y) * stepFactor;
-        }
-      }
-
-      draw(ctx, centerX, centerY, scale, symmetry, baseHue, alpha) {
-        ctx.lineWidth = 1;
-        ctx.lineCap = 'round';
-        
-        for (let i = 0; i < symmetry; i++) {
-          const angle = (i * Math.PI * 2) / symmetry;
-          
-          const prevRotX = this.prevX * Math.cos(angle) - this.prevY * Math.sin(angle);
-          const prevRotY = this.prevX * Math.sin(angle) + this.prevY * Math.cos(angle);
-          
-          const currRotX = this.x * Math.cos(angle) - this.y * Math.sin(angle);
-          const currRotY = this.x * Math.sin(angle) + this.y * Math.cos(angle);
-          
-          const prevScreenX = centerX + prevRotX * scale;
-          const prevScreenY = centerY + prevRotY * scale;
-          const currScreenX = centerX + currRotX * scale;
-          const currScreenY = centerY + currRotY * scale;
-          
-          const hue = (baseHue + this.colorOffset) % 360;
-          
-          ctx.strokeStyle = `hsla(${hue}, 65%, 55%, ${alpha * 0.7})`;
-          ctx.beginPath();
-          ctx.moveTo(prevScreenX, prevScreenY);
-          ctx.lineTo(currScreenX, currScreenY);
-          ctx.stroke();
-        }
-      }
-    }
-    // --- End PathTracer Class ---
-
-    // Responsive canvas sizing
+    // --- Setup Functions ---
     const resizeCanvas = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
+      // Initial clear on resize
+      ctx.fillStyle = '#0a0a0f';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
     };
-    resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
+    resizeCanvas(); // Initial call
 
-    // Track scroll depth
     const handleScroll = () => {
       const winScroll = document.documentElement.scrollTop;
       const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
       const scrolled = height > 0 ? (winScroll / height) : 0;
-      setScrollDepth(scrolled);
+      scrollDepthRef.current = scrolled; // Update ref directly
     };
     window.addEventListener('scroll', handleScroll);
 
-    // Track session time
-    const timeInterval = setInterval(() => {
-      setSessionTime((Date.now() - startTimeRef.current) / 1000);
-    }, 100);
+    const updateSessionTime = () => {
+      sessionTimeRef.current = (Date.now() - startTimeRef.current) / 1000;
+    };
+    const timeInterval = setInterval(updateSessionTime, 100);
 
+    // --- Animation Setup ---
     const particleCount = 400;
-    const tracers = [];
-    for (let i = 0; i < particleCount; i++) {
-      tracers.push(new PathTracer(i, particleCount));
-    }
+    const tracers = Array.from({ length: particleCount }, (_, i) => 
+      new PathTracer(i, particleCount)
+    );
     
-    // Initial clear
-    ctx.fillStyle = '#0a0a0f';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    const animate = (timestamp) => {
+    // --- The Animation Loop ---
+    const animate = () => {
       const now = Date.now();
-      const deltaTime = now - lastTimeRef.current; // Calculate time elapsed
-      lastTimeRef.current = now; // Store current time for next frame
+      const deltaTime = now - lastTimeRef.current;
+      lastTimeRef.current = now;
       
       const centerX = canvas.width / 2;
       const centerY = canvas.height / 2;
+      const currentScrollDepth = scrollDepthRef.current;
+      const currentSessionTime = sessionTimeRef.current;
       
-      // FIXED: Always apply a small, consistent fade
-      ctx.fillStyle = 'rgba(10, 10, 15, 0.015)'; // Consistent fade alpha
+      // 1. Gentle Background Fade (Consistent)
+      ctx.fillStyle = 'rgba(10, 10, 15, 0.015)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       
-      // Adaptive parameters - based on total elapsed time, not frame time
-      const time = now * 0.00002;
+      // 2. Adaptive Parameters (Cleaned up)
+      const globalTime = now * 0.00002;
       
-      const baseA = 1.4;
-      const baseB = -2.3;
-      const baseC = 2.4;
-      const baseD = -2.1;
+      // Base Attractor Constants
+      const [baseA, baseB, baseC, baseD] = [1.4, -2.3, 2.4, -2.1];
       
-      const scrollInfluence = scrollDepth * 0.25;
-      const timeInfluence = Math.min(sessionTime / 60, 1) * 0.15;
-      const timeOfDay = Math.sin(time) * 0.08;
+      // Time/Scroll Influences
+      const scrollInfluence = currentScrollDepth * 0.25;
+      const timeInfluence = Math.min(currentSessionTime / 60, 1) * 0.15;
+      const timeOscillation = Math.sin(globalTime) * 0.08;
       
-      const a = baseA + scrollInfluence + timeOfDay;
+      // Final Parameters
+      const a = baseA + scrollInfluence + timeOscillation;
       const b = baseB + timeInfluence * 0.4;
-      const c = baseC - scrollInfluence * 0.25;
-      const d = baseD + Math.cos(time * 0.6) * 0.12;
+      const c = baseC - currentScrollDepth * 0.25;
+      const d = baseD + Math.cos(globalTime * 0.6) * 0.12;
       
-      const symmetry = Math.floor(3 + scrollDepth * 3 + timeInfluence * 2);
-      
-      const hue = 200 + scrollDepth * 40 + Math.sin(time * 0.4) * 15;
+      // Visuals
+      const symmetry = Math.floor(3 + currentScrollDepth * 3 + timeInfluence * 2);
+      const hue = 200 + currentScrollDepth * 40 + Math.sin(globalTime * 0.4) * 15;
       const scale = Math.min(canvas.width, canvas.height) * 0.22;
-      const alpha = 0.35 + scrollDepth * 0.25;
+      const alpha = 0.35 + currentScrollDepth * 0.25;
 
-      // MODIFIED: Pass deltaTime to the update function
+      // 3. Update UI State (Less Frequent, only for display)
+      setUiParams({
+        symmetry: symmetry,
+        depth: Math.floor(currentScrollDepth * 100),
+        time: Math.floor(currentSessionTime),
+      });
+
+      // 4. Update and Draw Tracers
+      const center = { x: centerX, y: centerY };
       tracers.forEach(tracer => {
-        tracer.update(a, b, c, d, deltaTime); 
-        tracer.draw(ctx, centerX, centerY, scale, symmetry, hue, alpha);
+        tracer.update(a, b, c, d, deltaTime);
+        tracer.draw(ctx, center, scale, symmetry, hue, alpha);
       });
 
       animationRef.current = requestAnimationFrame(animate);
     };
 
-    animate();
+    animate(); // Start the loop
 
+    // --- Cleanup ---
     return () => {
       window.removeEventListener('resize', resizeCanvas);
       window.removeEventListener('scroll', handleScroll);
@@ -160,9 +185,9 @@ const IntelligentEmergence = () => {
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [scrollDepth, sessionTime]);
+  }, []); // Dependency array is now empty!
 
-  // The rest of your component remains the same
+  // --- 3. Render Logic ---
   return (
     <div className="relative w-full min-h-screen bg-[#0a0a0f] overflow-x-hidden">
       {/* Attractor Canvas */}
@@ -199,10 +224,11 @@ const IntelligentEmergence = () => {
             <p className="text-lg text-gray-300 leading-relaxed">
               This is design as conversation. Mathematics as communication. Beauty as intelligence.
             </p>
+            {/* Displaying state from the animation loop */}
             <div className="pt-6 flex gap-6 text-sm font-mono text-gray-400">
-              <div>Symmetry: {Math.floor(3 + scrollDepth * 3 + Math.min(sessionTime / 60, 1) * 2)}-fold</div>
-              <div>Depth: {Math.floor(scrollDepth * 100)}%</div>
-              <div>Time: {Math.floor(sessionTime)}s</div>
+              <div>Symmetry: {uiParams.symmetry}-fold</div>
+              <div>Depth: {uiParams.depth}%</div>
+              <div>Time: {uiParams.time}s</div>
             </div>
           </div>
         </div>
