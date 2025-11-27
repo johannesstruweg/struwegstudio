@@ -1,83 +1,101 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-// --- 1. PathTracer Class (Outside of Component) ---
-// Moving this out improves clarity and prevents unnecessary re-creation.
+// --- PathTracer Class: Now draws points instead of lines and includes glow ---
 class PathTracer {
   constructor(index, total) {
     const phase = (index / total) * Math.PI * 2;
-    // Start particles slightly offset from the origin
-    this.x = Math.cos(phase) * 0.01; 
-    this.y = Math.sin(phase) * 0.01;
+    this.x = Math.cos(phase) * 0.1; 
+    this.y = Math.sin(phase) * 0.1;
     this.prevX = this.x;
     this.prevY = this.y;
     this.colorOffset = (index / total) * 30;
+    this.initialAge = Math.random() * 100; // Give particles a varied start
   }
 
-  // Update using the difference equation for a smooth, time-scaled step
   update(a, b, c, d, deltaTime) {
-    // Substeps and scaling for frame-rate independence (deltaTime is in ms)
     const substeps = 5; 
-    const speedFactor = 0.1 * (deltaTime / 16.666) / substeps; 
+    // Reduced speedFactor slightly to make structures more defined
+    const speedFactor = 0.08 * (deltaTime / 16.666) / substeps; 
 
     for (let i = 0; i < substeps; i++) {
       this.prevX = this.x;
       this.prevY = this.y;
       
-      // The Chaotic Attractor function (Clifford/Swirl variant)
       const newX = Math.sin(a * this.y) - Math.cos(b * this.x);
       const newY = Math.sin(c * this.x) - Math.cos(d * this.y);
       
-      // Integration step: move towards the new state
       this.x = this.x + (newX - this.x) * speedFactor;
       this.y = this.y + (newY - this.y) * speedFactor;
     }
   }
 
-  // Drawing logic remains clean
-  draw(ctx, center, scale, symmetry, baseHue, alpha) {
-    ctx.lineWidth = 1;
-    ctx.lineCap = 'round';
+  // MODIFIED: Draw points (circles) instead of lines, with glow effects
+  draw(ctx, center, scale, symmetry, baseHue, alpha, time) {
+    ctx.lineCap = 'round'; // Still good practice, though not for points
     
+    // Calculate a dynamic point size and glow based on movement or time
+    const speed = Math.sqrt((this.x - this.prevX)**2 + (this.y - this.prevY)**2);
+    const basePointSize = 1.2; 
+    const pointSize = basePointSize + Math.min(speed * 200, 2); // Faster points are slightly larger
+    const pointAlpha = alpha * (0.5 + Math.min(speed * 100, 0.5)); // Faster points are brighter
+
     for (let i = 0; i < symmetry; i++) {
       const angle = (i * Math.PI * 2) / symmetry;
       
-      // Helper function for rotation
       const rotate = (px, py, ang) => ({
         x: px * Math.cos(ang) - py * Math.sin(ang),
         y: px * Math.sin(ang) + py * Math.cos(ang),
       });
 
-      const prevRot = rotate(this.prevX, this.prevY, angle);
       const currRot = rotate(this.x, this.y, angle);
       
-      const prevScreenX = center.x + prevRot.x * scale;
-      const prevScreenY = center.y + prevRot.y * scale;
-      const currScreenX = center.x + currRot.x * scale;
-      const currScreenY = center.y + currRot.y * scale;
+      // Introduce a subtle "Z-depth" or wobble
+      const wobble = Math.sin(time * 0.05 + this.initialAge + i) * 0.2;
+      const screenX = center.x + currRot.x * scale * (1 + wobble * 0.1); // Scale slightly with wobble
+      const screenY = center.y + currRot.y * scale * (1 + wobble * 0.1);
       
-      const hue = (baseHue + this.colorOffset) % 360;
+      const hue = (baseHue + this.colorOffset + wobble * 5) % 360; // Subtle hue shift with wobble
+      const saturation = 75 + Math.sin(time * 0.02 + i) * 15; // More vibrant
+      const lightness = 60 + Math.cos(time * 0.03 + i) * 10; // Dynamic lightness
+
+      const color = `hsla(${hue}, ${saturation}%, ${lightness}%, ${pointAlpha})`;
       
-      ctx.strokeStyle = `hsla(${hue}, 65%, 55%, ${alpha * 0.7})`;
+      // --- Holographic Glow Effect ---
+      // Draw multiple blurred circles for a glow
+      const glowPasses = 3;
+      for (let g = 0; g < glowPasses; g++) {
+        const glowRadius = pointSize + g * 0.8; // Larger radius for outer glow
+        const glowAlpha = pointAlpha / (g + 1) * 0.8; // Fades out
+        
+        ctx.fillStyle = `hsla(${hue}, ${saturation}%, ${lightness}%, ${glowAlpha * 0.4})`; // Inner glow is brighter
+        ctx.shadowColor = `hsla(${hue}, ${saturation}%, ${lightness}%, ${glowAlpha})`;
+        ctx.shadowBlur = glowRadius * 1.5; // Controls spread of glow
+        
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, glowRadius / 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Draw the main bright point on top (no shadow)
+      ctx.shadowBlur = 0; // Disable shadow for the main point
+      ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.moveTo(prevScreenX, prevScreenY);
-      ctx.lineTo(currScreenX, currScreenY);
-      ctx.stroke();
+      ctx.arc(screenX, screenY, pointSize / 2, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 }
 
-// --- 2. React Component ---
+// --- React Component (Main Logic) ---
 const IntelligentEmergence = () => {
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
   
-  // Use Refs for animation parameters to avoid re-rendering the effect
   const scrollDepthRef = useRef(0);
   const sessionTimeRef = useRef(0);
   const lastTimeRef = useRef(Date.now());
   const startTimeRef = useRef(Date.now());
 
-  // State is now only used for UI display, keeping the rendering loop clean
   const [uiParams, setUiParams] = useState({
     symmetry: 3,
     depth: 0,
@@ -86,25 +104,24 @@ const IntelligentEmergence = () => {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return; // Guard clause
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
     
     // --- Setup Functions ---
     const resizeCanvas = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-      // Initial clear on resize
-      ctx.fillStyle = '#0a0a0f';
+      ctx.fillStyle = '#0a0a0f'; // Ensure initial background is dark
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     };
     window.addEventListener('resize', resizeCanvas);
-    resizeCanvas(); // Initial call
+    resizeCanvas();
 
     const handleScroll = () => {
       const winScroll = document.documentElement.scrollTop;
       const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
       const scrolled = height > 0 ? (winScroll / height) : 0;
-      scrollDepthRef.current = scrolled; // Update ref directly
+      scrollDepthRef.current = scrolled;
     };
     window.addEventListener('scroll', handleScroll);
 
@@ -114,7 +131,7 @@ const IntelligentEmergence = () => {
     const timeInterval = setInterval(updateSessionTime, 100);
 
     // --- Animation Setup ---
-    const particleCount = 400;
+    const particleCount = 600; // Increased particle count for denser cloud
     const tracers = Array.from({ length: particleCount }, (_, i) => 
       new PathTracer(i, particleCount)
     );
@@ -130,34 +147,34 @@ const IntelligentEmergence = () => {
       const currentScrollDepth = scrollDepthRef.current;
       const currentSessionTime = sessionTimeRef.current;
       
-      // 1. Gentle Background Fade (Consistent)
-      ctx.fillStyle = 'rgba(10, 10, 15, 0.015)';
+      // 1. Background Fade for trails (slightly more transparent for lighter trails)
+      ctx.fillStyle = 'rgba(10, 10, 15, 0.02)'; // Slightly increased alpha for denser trails
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       
-      // 2. Adaptive Parameters (Cleaned up)
+      // 2. Adaptive Parameters (tuned for "holographic" structure)
       const globalTime = now * 0.00002;
       
-      // Base Attractor Constants
-      const [baseA, baseB, baseC, baseD] = [1.4, -2.3, 2.4, -2.1];
+      // Tuned base constants for more intricate patterns
+      const [baseA, baseB, baseC, baseD] = [1.7, -1.9, 2.2, -1.8]; 
       
-      // Time/Scroll Influences
-      const scrollInfluence = currentScrollDepth * 0.25;
-      const timeInfluence = Math.min(currentSessionTime / 60, 1) * 0.15;
-      const timeOscillation = Math.sin(globalTime) * 0.08;
+      const scrollInfluence = currentScrollDepth * 0.3; // Increased influence
+      const timeInfluence = Math.min(currentSessionTime / 60, 1) * 0.2; // Increased influence
+      const timeOscillation = Math.sin(globalTime * 0.8) * 0.1; // Slower, more impactful oscillation
       
-      // Final Parameters
+      // Final Attractor Parameters
       const a = baseA + scrollInfluence + timeOscillation;
-      const b = baseB + timeInfluence * 0.4;
-      const c = baseC - currentScrollDepth * 0.25;
-      const d = baseD + Math.cos(globalTime * 0.6) * 0.12;
+      const b = baseB + timeInfluence * 0.5;
+      const c = baseC - currentScrollDepth * 0.3;
+      const d = baseD + Math.cos(globalTime * 0.7) * 0.15;
       
-      // Visuals
-      const symmetry = Math.floor(3 + currentScrollDepth * 3 + timeInfluence * 2);
-      const hue = 200 + currentScrollDepth * 40 + Math.sin(globalTime * 0.4) * 15;
-      const scale = Math.min(canvas.width, canvas.height) * 0.22;
-      const alpha = 0.35 + currentScrollDepth * 0.25;
+      // Visual Parameters (tuned for futuristic feel)
+      const symmetry = Math.floor(4 + currentScrollDepth * 4 + timeInfluence * 3); // More symmetry
+      const baseHue = 220; // Starting with cool blue
+      const hue = (baseHue + currentScrollDepth * 60 + Math.sin(globalTime * 0.3) * 30) % 360; // Broader hue shift
+      const scale = Math.min(canvas.width, canvas.height) * 0.25; // Slightly larger scale
+      const alpha = 0.4 + currentScrollDepth * 0.3; // Brighter points with scroll
 
-      // 3. Update UI State (Less Frequent, only for display)
+      // 3. Update UI State
       setUiParams({
         symmetry: symmetry,
         depth: Math.floor(currentScrollDepth * 100),
@@ -168,13 +185,13 @@ const IntelligentEmergence = () => {
       const center = { x: centerX, y: centerY };
       tracers.forEach(tracer => {
         tracer.update(a, b, c, d, deltaTime);
-        tracer.draw(ctx, center, scale, symmetry, hue, alpha);
+        tracer.draw(ctx, center, scale, symmetry, hue, alpha, globalTime); // Pass globalTime for wobble
       });
 
-      animationRef.current = requestAnimationFrame(animate);
+      animationRef.current = requestAnimationFrame(animate); 
     };
 
-    animate(); // Start the loop
+    animate(); 
 
     // --- Cleanup ---
     return () => {
@@ -182,12 +199,12 @@ const IntelligentEmergence = () => {
       window.removeEventListener('scroll', handleScroll);
       clearInterval(timeInterval);
       if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
+        cancelAnimationFrame(animationRef.current); 
       }
     };
-  }, []); // Dependency array is now empty!
+  }, []); 
 
-  // --- 3. Render Logic ---
+  // --- Render Logic (UI content remains the same) ---
   return (
     <div className="relative w-full min-h-screen bg-[#0a0a0f] overflow-x-hidden">
       {/* Attractor Canvas */}
@@ -224,7 +241,6 @@ const IntelligentEmergence = () => {
             <p className="text-lg text-gray-300 leading-relaxed">
               This is design as conversation. Mathematics as communication. Beauty as intelligence.
             </p>
-            {/* Displaying state from the animation loop */}
             <div className="pt-6 flex gap-6 text-sm font-mono text-gray-400">
               <div>Symmetry: {uiParams.symmetry}-fold</div>
               <div>Depth: {uiParams.depth}%</div>
