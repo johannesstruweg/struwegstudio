@@ -40,7 +40,7 @@ const IntelligentEmergence = () => {
         this.x = Math.random() * 4 - 2;
         this.y = Math.random() * 4 - 2;
         this.history = [];
-        this.maxHistory = 50;
+        this.maxHistory = 80;
       }
 
       update(a, b, c, d) {
@@ -61,8 +61,8 @@ const IntelligentEmergence = () => {
           const angle = (i * Math.PI * 2) / symmetry;
           
           this.history.forEach((pos, index) => {
-            const opacity = (index / this.history.length) * alpha;
-            const size = 1 + (index / this.history.length) * 1.5;
+            const opacity = (index / this.history.length) * alpha * 0.6;
+            const size = 0.8 + (index / this.history.length) * 1.2;
             
             // Rotate around center
             const rotatedX = pos.x * Math.cos(angle) - pos.y * Math.sin(angle);
@@ -91,12 +91,12 @@ const IntelligentEmergence = () => {
       const centerX = canvas.width / 2;
       const centerY = canvas.height / 2;
       
-      // Fade effect instead of clear for trail
-      ctx.fillStyle = 'rgba(10, 10, 15, 0.08)';
+      // Smooth fade effect for elegant trails
+      ctx.fillStyle = 'rgba(10, 10, 15, 0.03)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Adaptive parameters based on visitor behavior
-      const time = Date.now() * 0.0001;
+      const time = Date.now() * 0.00005; // Slower time evolution
       
       // Base parameters (Peter de Jong attractor)
       const baseA = -2.0;
@@ -111,13 +111,13 @@ const IntelligentEmergence = () => {
       const timeInfluence = Math.min(sessionTime / 60, 1) * 0.3;
       
       // Time of day influence (simulated with sine wave)
-      const timeOfDay = Math.sin(time * 0.5) * 0.2;
+      const timeOfDay = Math.sin(time * 0.3) * 0.15;
       
       // Adaptive parameters
       const a = baseA + scrollInfluence + timeOfDay;
       const b = baseB + timeInfluence;
       const c = baseC - scrollInfluence * 0.5;
-      const d = baseD + Math.sin(time) * 0.3;
+      const d = baseD + Math.sin(time * 2) * 0.2;
       
       // Symmetry increases with engagement
       const symmetry = Math.floor(3 + scrollDepth * 6 + timeInfluence * 3); // 3 to 12-fold
@@ -127,7 +127,7 @@ const IntelligentEmergence = () => {
       
       // Scale and alpha
       const scale = Math.min(canvas.width, canvas.height) * 0.18;
-      const alpha = 0.4 + scrollDepth * 0.3;
+      const alpha = 0.3 + scrollDepth * 0.25;
 
       // Update and draw particles
       particles.forEach(particle => {
