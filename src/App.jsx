@@ -10,7 +10,6 @@ const IntelligentEmergence = () => {
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
-    let particles = [];
     
     // Responsive canvas sizing
     const resizeCanvas = () => {
@@ -34,102 +33,103 @@ const IntelligentEmergence = () => {
       setSessionTime((Date.now() - startTimeRef.current) / 1000);
     }, 100);
 
-    // Peter de Jong attractor with adaptive parameters
+    // Particle system with continuous paths (no trails, just flowing points)
     class Particle {
-      constructor() {
-        this.x = Math.random() * 4 - 2;
-        this.y = Math.random() * 4 - 2;
-        this.history = [];
-        this.maxHistory = 80;
+      constructor(index, total) {
+        // Distribute particles evenly across the attractor
+        const phase = (index / total) * Math.PI * 2;
+        this.x = Math.cos(phase) * 2;
+        this.y = Math.sin(phase) * 2;
+        this.hue = (index / total) * 60; // Slight color variation per particle
       }
 
       update(a, b, c, d) {
         const newX = Math.sin(a * this.y) - Math.cos(b * this.x);
         const newY = Math.sin(c * this.x) - Math.cos(d * this.y);
         
-        this.history.push({ x: this.x, y: this.y });
-        if (this.history.length > this.maxHistory) {
-          this.history.shift();
-        }
-        
         this.x = newX;
         this.y = newY;
       }
 
-      draw(ctx, centerX, centerY, scale, symmetry, hue, alpha) {
+      draw(ctx, centerX, centerY, scale, symmetry, baseHue, alpha) {
         for (let i = 0; i < symmetry; i++) {
           const angle = (i * Math.PI * 2) / symmetry;
           
-          this.history.forEach((pos, index) => {
-            const opacity = (index / this.history.length) * alpha * 0.6;
-            const size = 0.8 + (index / this.history.length) * 1.2;
-            
-            // Rotate around center
-            const rotatedX = pos.x * Math.cos(angle) - pos.y * Math.sin(angle);
-            const rotatedY = pos.x * Math.sin(angle) + pos.y * Math.cos(angle);
-            
-            const screenX = centerX + rotatedX * scale;
-            const screenY = centerY + rotatedY * scale;
-            
-            ctx.fillStyle = `hsla(${hue}, 70%, 60%, ${opacity})`;
-            ctx.beginPath();
-            ctx.arc(screenX, screenY, size, 0, Math.PI * 2);
-            ctx.fill();
-          });
+          // Rotate around center
+          const rotatedX = this.x * Math.cos(angle) - this.y * Math.sin(angle);
+          const rotatedY = this.x * Math.sin(angle) + this.y * Math.cos(angle);
+          
+          const screenX = centerX + rotatedX * scale;
+          const screenY = centerY + rotatedY * scale;
+          
+          const hue = (baseHue + this.hue) % 360;
+          
+          // Draw as glowing point
+          ctx.fillStyle = `hsla(${hue}, 65%, 55%, ${alpha})`;
+          ctx.beginPath();
+          ctx.arc(screenX, screenY, 1.5, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Subtle glow
+          ctx.fillStyle = `hsla(${hue}, 70%, 65%, ${alpha * 0.3})`;
+          ctx.beginPath();
+          ctx.arc(screenX, screenY, 2.5, 0, Math.PI * 2);
+          ctx.fill();
         }
       }
     }
 
     // Initialize particles
-    const particleCount = 800;
+    const particleCount = 1200;
+    const particles = [];
     for (let i = 0; i < particleCount; i++) {
-      particles.push(new Particle());
+      particles.push(new Particle(i, particleCount));
     }
 
-    // Animation loop
+    // Animation loop with complete redraw (no fading)
     const animate = () => {
       const centerX = canvas.width / 2;
       const centerY = canvas.height / 2;
       
-      // Smooth fade effect for elegant trails
-      ctx.fillStyle = 'rgba(10, 10, 15, 0.03)';
+      // Complete clear - no trails, no fading
+      ctx.fillStyle = '#0a0a0f';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Adaptive parameters based on visitor behavior
-      const time = Date.now() * 0.00005; // Slower time evolution
+      const time = Date.now() * 0.00003;
       
       // Base parameters (Peter de Jong attractor)
-      const baseA = -2.0;
-      const baseB = -2.0;
-      const baseC = 1.2;
-      const baseD = 2.0;
+      const baseA = 1.4;
+      const baseB = -2.3;
+      const baseC = 2.4;
+      const baseD = -2.1;
       
-      // Scroll depth influences parameter drift (0 to 1)
-      const scrollInfluence = scrollDepth * 0.5;
+      // Scroll depth influences parameter drift
+      const scrollInfluence = scrollDepth * 0.3;
       
-      // Session time influences complexity (increases slowly)
-      const timeInfluence = Math.min(sessionTime / 60, 1) * 0.3;
+      // Session time influences complexity
+      const timeInfluence = Math.min(sessionTime / 60, 1) * 0.2;
       
-      // Time of day influence (simulated with sine wave)
-      const timeOfDay = Math.sin(time * 0.3) * 0.15;
+      // Gentle time evolution
+      const timeOfDay = Math.sin(time) * 0.1;
       
       // Adaptive parameters
       const a = baseA + scrollInfluence + timeOfDay;
-      const b = baseB + timeInfluence;
-      const c = baseC - scrollInfluence * 0.5;
-      const d = baseD + Math.sin(time * 2) * 0.2;
+      const b = baseB + timeInfluence * 0.5;
+      const c = baseC - scrollInfluence * 0.3;
+      const d = baseD + Math.cos(time * 0.7) * 0.15;
       
       // Symmetry increases with engagement
-      const symmetry = Math.floor(3 + scrollDepth * 6 + timeInfluence * 3); // 3 to 12-fold
+      const symmetry = Math.floor(3 + scrollDepth * 5 + timeInfluence * 4);
       
       // Color shifts with behavior
-      const hue = 200 + scrollDepth * 60 + timeOfDay * 40; // Blue to cyan to purple
+      const hue = 200 + scrollDepth * 50 + Math.sin(time * 0.5) * 20;
       
       // Scale and alpha
-      const scale = Math.min(canvas.width, canvas.height) * 0.18;
-      const alpha = 0.3 + scrollDepth * 0.25;
+      const scale = Math.min(canvas.width, canvas.height) * 0.2;
+      const alpha = 0.4 + scrollDepth * 0.3;
 
-      // Update and draw particles
+      // Update and draw all particles
       particles.forEach(particle => {
         particle.update(a, b, c, d);
         particle.draw(ctx, centerX, centerY, scale, symmetry, hue, alpha);
@@ -187,7 +187,7 @@ const IntelligentEmergence = () => {
               This is design as conversation. Mathematics as communication. Beauty as intelligence.
             </p>
             <div className="pt-6 flex gap-6 text-sm font-mono text-gray-400">
-              <div>Symmetry: {Math.floor(3 + scrollDepth * 6 + Math.min(sessionTime / 60, 1) * 3)}-fold</div>
+              <div>Symmetry: {Math.floor(3 + scrollDepth * 5 + Math.min(sessionTime / 60, 1) * 4)}-fold</div>
               <div>Depth: {Math.floor(scrollDepth * 100)}%</div>
               <div>Time: {Math.floor(sessionTime)}s</div>
             </div>
