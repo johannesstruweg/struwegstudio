@@ -9,12 +9,18 @@ const IntelligentEmergence = () => {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
     
+    if (!gl) {
+      console.error('WebGL not supported');
+      return;
+    }
+
     // Responsive canvas sizing
     const resizeCanvas = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
+      gl.viewport(0, 0, canvas.width, canvas.height);
     };
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
@@ -33,119 +39,134 @@ const IntelligentEmergence = () => {
       setSessionTime((Date.now() - startTimeRef.current) / 1000);
     }, 100);
 
-    // Continuous path drawing - smoother than individual particles
-    class PathTracer {
-      constructor(index, total) {
-        const phase = (index / total) * Math.PI * 2;
-        this.x = Math.cos(phase) * 2;
-        this.y = Math.sin(phase) * 2;
-        this.prevX = this.x;
-        this.prevY = this.y;
-        this.colorOffset = (index / total) * 30;
+    // Vertex shader - processes each point
+    const vertexShaderSource = `
+      attribute vec2 position;
+      uniform float time;
+      uniform float scroll;
+      uniform float session;
+      uniform vec2 resolution;
+      varying vec3 vColor;
+      
+      void main() {
+        // Strange attractor parameters (adaptive)
+        float a = 1.4 + scroll * 0.2 + sin(time * 0.5) * 0.05;
+        float b = -2.3 + session * 0.1;
+        float c = 2.4 - scroll * 0.15;
+        float d = -2.1 + cos(time * 0.3) * 0.08;
+        
+        // Compute attractor position
+        float x = position.x;
+        float y = position.y;
+        
+        float newX = sin(a * y) - cos(b * x);
+        float newY = sin(c * x) - cos(d * y);
+        
+        // Convert to clip space
+        vec2 clipSpace = vec2(newX * 0.22, newY * 0.22);
+        gl_Position = vec4(clipSpace, 0.0, 1.0);
+        gl_PointSize = 2.0;
+        
+        // Color based on position and scroll
+        float hue = 0.55 + scroll * 0.15 + sin(time * 0.2) * 0.05;
+        vColor = vec3(hue, 0.7, 0.6);
       }
+    `;
 
-      update(a, b, c, d) {
-        this.prevX = this.x;
-        this.prevY = this.y;
-        
-        const newX = Math.sin(a * this.y) - Math.cos(b * this.x);
-        const newY = Math.sin(c * this.x) - Math.cos(d * this.y);
-        
-        this.x = newX;
-        this.y = newY;
+    // Fragment shader - colors each pixel
+    const fragmentShaderSource = `
+      precision mediump float;
+      varying vec3 vColor;
+      uniform float alpha;
+      
+      vec3 hsv2rgb(vec3 c) {
+        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
       }
+      
+      void main() {
+        vec2 coord = gl_PointCoord - vec2(0.5);
+        float dist = length(coord);
+        float circle = smoothstep(0.5, 0.2, dist);
+        
+        vec3 rgb = hsv2rgb(vColor);
+        gl_FragColor = vec4(rgb, circle * alpha * 0.6);
+      }
+    `;
 
-      draw(ctx, centerX, centerY, scale, symmetry, baseHue, alpha) {
-        ctx.lineWidth = 1;
-        ctx.lineCap = 'round';
-        
-        for (let i = 0; i < symmetry; i++) {
-          const angle = (i * Math.PI * 2) / symmetry;
-          
-          // Rotate previous position
-          const prevRotX = this.prevX * Math.cos(angle) - this.prevY * Math.sin(angle);
-          const prevRotY = this.prevX * Math.sin(angle) + this.prevY * Math.cos(angle);
-          
-          // Rotate current position
-          const currRotX = this.x * Math.cos(angle) - this.y * Math.sin(angle);
-          const currRotY = this.x * Math.sin(angle) + this.y * Math.cos(angle);
-          
-          const prevScreenX = centerX + prevRotX * scale;
-          const prevScreenY = centerY + prevRotY * scale;
-          const currScreenX = centerX + currRotX * scale;
-          const currScreenY = centerY + currRotY * scale;
-          
-          const hue = (baseHue + this.colorOffset) % 360;
-          
-          // Draw line segment
-          ctx.strokeStyle = `hsla(${hue}, 65%, 55%, ${alpha * 0.7})`;
-          ctx.beginPath();
-          ctx.moveTo(prevScreenX, prevScreenY);
-          ctx.lineTo(currScreenX, currScreenY);
-          ctx.stroke();
-        }
+    // Compile shader
+    function compileShader(source, type) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+        return null;
       }
+      return shader;
     }
 
-    // Fewer particles - reduces moiré
-    const particleCount = 400;
-    const tracers = [];
-    for (let i = 0; i < particleCount; i++) {
-      tracers.push(new PathTracer(i, particleCount));
+    // Create program
+    const vertexShader = compileShader(vertexShaderSource, gl.VERTEX_SHADER);
+    const fragmentShader = compileShader(fragmentShaderSource, gl.FRAGMENT_SHADER);
+    const program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    gl.useProgram(program);
+
+    // Create particle positions
+    const numParticles = 800;
+    const positions = new Float32Array(numParticles * 2);
+    for (let i = 0; i < numParticles; i++) {
+      const angle = (i / numParticles) * Math.PI * 2;
+      positions[i * 2] = Math.cos(angle) * 2;
+      positions[i * 2 + 1] = Math.sin(angle) * 2;
     }
 
-    // Persistent background with very slow fade
-    let fadeAmount = 0;
-    
+    // Create buffer
+    const positionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+    // Set up attributes
+    const positionLocation = gl.getAttribLocation(program, 'position');
+    gl.enableVertexAttribArray(positionLocation);
+    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+    // Get uniform locations
+    const timeLocation = gl.getUniformLocation(program, 'time');
+    const scrollLocation = gl.getUniformLocation(program, 'scroll');
+    const sessionLocation = gl.getUniformLocation(program, 'session');
+    const resolutionLocation = gl.getUniformLocation(program, 'resolution');
+    const alphaLocation = gl.getUniformLocation(program, 'alpha');
+
+    // Enable blending for transparency
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    // Animation loop
     const animate = () => {
-      const centerX = canvas.width / 2;
-      const centerY = canvas.height / 2;
+      const time = Date.now() * 0.0001;
       
-      // Gentle fade instead of full clear - creates smooth trails
-      fadeAmount += 0.01;
-      if (fadeAmount >= 1) {
-        ctx.fillStyle = 'rgba(10, 10, 15, 0.015)';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        fadeAmount = 0;
-      }
+      // Clear with background color
+      gl.clearColor(0.039, 0.039, 0.059, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
 
-      // Adaptive parameters
-      const time = Date.now() * 0.00002;
-      
-      const baseA = 1.4;
-      const baseB = -2.3;
-      const baseC = 2.4;
-      const baseD = -2.1;
-      
-      const scrollInfluence = scrollDepth * 0.25;
-      const timeInfluence = Math.min(sessionTime / 60, 1) * 0.15;
-      const timeOfDay = Math.sin(time) * 0.08;
-      
-      const a = baseA + scrollInfluence + timeOfDay;
-      const b = baseB + timeInfluence * 0.4;
-      const c = baseC - scrollInfluence * 0.25;
-      const d = baseD + Math.cos(time * 0.6) * 0.12;
-      
-      // Lower max symmetry to reduce moiré
-      const symmetry = Math.floor(3 + scrollDepth * 3 + timeInfluence * 2);
-      
-      const hue = 200 + scrollDepth * 40 + Math.sin(time * 0.4) * 15;
-      const scale = Math.min(canvas.width, canvas.height) * 0.22;
-      const alpha = 0.35 + scrollDepth * 0.25;
+      // Update uniforms
+      gl.uniform1f(timeLocation, time);
+      gl.uniform1f(scrollLocation, scrollDepth);
+      gl.uniform1f(sessionLocation, Math.min(sessionTime / 60, 1));
+      gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+      gl.uniform1f(alphaLocation, 0.4 + scrollDepth * 0.3);
 
-      // Update and draw
-      tracers.forEach(tracer => {
-        tracer.update(a, b, c, d);
-        tracer.draw(ctx, centerX, centerY, scale, symmetry, hue, alpha);
-      });
+      // Draw points
+      gl.drawArrays(gl.POINTS, 0, numParticles);
 
       animationRef.current = requestAnimationFrame(animate);
     };
 
-    // Initial clear
-    ctx.fillStyle = '#0a0a0f';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
     animate();
 
     return () => {
@@ -160,7 +181,7 @@ const IntelligentEmergence = () => {
 
   return (
     <div className="relative w-full min-h-screen bg-[#0a0a0f] overflow-x-hidden">
-      {/* Attractor Canvas */}
+      {/* WebGL Canvas */}
       <canvas
         ref={canvasRef}
         className="fixed top-0 left-0 w-full h-full"
@@ -195,7 +216,6 @@ const IntelligentEmergence = () => {
               This is design as conversation. Mathematics as communication. Beauty as intelligence.
             </p>
             <div className="pt-6 flex gap-6 text-sm font-mono text-gray-400">
-              <div>Symmetry: {Math.floor(3 + scrollDepth * 3 + Math.min(sessionTime / 60, 1) * 2)}-fold</div>
               <div>Depth: {Math.floor(scrollDepth * 100)}%</div>
               <div>Time: {Math.floor(sessionTime)}s</div>
             </div>
