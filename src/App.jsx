@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-// --- PathTracer Class (Optimized for Fine Lines) ---
+// --- PathTracer Class (Pure Dots) ---
 class PathTracer {
   constructor(index, total) {
     const phase = (index / total) * Math.PI * 2;
@@ -8,18 +8,19 @@ class PathTracer {
     this.y = Math.sin(phase) * 0.1;
     this.prevX = this.x;
     this.prevY = this.y;
-    this.colorOffset = (index / total) * 30; // Used for subtle variation
   }
 
+  // Time-scaled update for smooth motion (Crucial for silkiness)
   update(a, b, c, d, deltaTime) {
     const substeps = 5; 
     // Increased speed factor for faster, silkier movement
-    const speedFactor = 0.12 * (deltaTime / 16.666) / substeps; 
+    const speedFactor = 0.15 * (deltaTime / 16.666) / substeps; 
 
     for (let i = 0; i < substeps; i++) {
       this.prevX = this.x;
       this.prevY = this.y;
       
+      // The Attractor Equation
       const newX = Math.sin(a * this.y) - Math.cos(b * this.x);
       const newY = Math.sin(c * this.x) - Math.cos(d * this.y);
       
@@ -28,8 +29,14 @@ class PathTracer {
     }
   }
 
-  // MODIFIED: Draw ultra-fine lines with high contrast (minimalist, clean)
-  draw(ctx, center, scale, symmetry, baseHue, alpha, time) {
+  // MODIFIED: Draws only a single, solid dot
+  draw(ctx, center, scale, symmetry) {
+    
+    // Ensure absolutely no blur or shadow artifacts
+    ctx.shadowBlur = 0; 
+    
+    // Fixed color for simplicity and high contrast
+    ctx.fillStyle = '#66FFFF'; // Bright Cyan
     
     for (let i = 0; i < symmetry; i++) {
       const angle = (i * Math.PI * 2) / symmetry;
@@ -39,34 +46,13 @@ class PathTracer {
         y: px * Math.sin(ang) + py * Math.cos(ang),
       });
 
-      const prevRot = rotate(this.prevX, this.prevY, angle);
       const currRot = rotate(this.x, this.y, angle);
       
-      const prevScreenX = center.x + prevRot.x * scale;
-      const prevScreenY = center.y + prevRot.y * scale;
-      const currScreenX = center.x + currRot.x * scale;
-      const currScreenY = center.y + currRot.y * scale;
+      const screenX = center.x + currRot.x * scale;
+      const screenY = center.y + currRot.y * scale;
       
-      // Use a near-monochromatic color: cool blue/cyan
-      const hue = (baseHue + this.colorOffset * 0.5) % 360; 
-      
-      // Set line width extremely thin for vector-like look
-      ctx.lineWidth = 0.5; 
-      
-      // Use a consistent, subtle shadow for a soft, internal glow
-      ctx.shadowColor = `hsl(${hue}, 80%, 70%)`;
-      ctx.shadowBlur = 2; // Subtle blur, not a full glow effect
-      
-      // Stroke color is bright white/light cyan
-      ctx.strokeStyle = `hsla(${hue}, 70%, 85%, ${alpha * 0.8})`; 
-      
-      ctx.beginPath();
-      ctx.moveTo(prevScreenX, prevScreenY);
-      ctx.lineTo(currScreenX, currScreenY);
-      ctx.stroke();
-      
-      // Crucial: Clear shadow blur for the next element if needed, but here 
-      // we let it apply to all lines, which is simpler and cleaner.
+      // Draw a small, crisp rectangle (dot)
+      ctx.fillRect(screenX, screenY, 1.5, 1.5); 
     }
   }
 }
@@ -96,7 +82,7 @@ const IntelligentEmergence = () => {
     const resizeCanvas = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-      ctx.fillStyle = '#0a0a0f';
+      ctx.fillStyle = '#010105'; // Deep black background
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     };
     window.addEventListener('resize', resizeCanvas);
@@ -116,7 +102,7 @@ const IntelligentEmergence = () => {
     const timeInterval = setInterval(updateSessionTime, 100);
 
     // --- Animation Setup ---
-    const particleCount = 400; // Optimal particle count for fine lines
+    const particleCount = 2000; // High count to define the structure
     const tracers = Array.from({ length: particleCount }, (_, i) => 
       new PathTracer(i, particleCount)
     );
@@ -132,14 +118,14 @@ const IntelligentEmergence = () => {
       const currentScrollDepth = scrollDepthRef.current;
       const currentSessionTime = sessionTimeRef.current;
       
-      // 1. Background Fade (Deep black, ultra-subtle fade for smooth trails)
-      ctx.fillStyle = 'rgba(10, 10, 15, 0.01)'; // Lower alpha for extremely long, smooth trails
+      // 1. Full Canvas Clear (NO TRAILS)
+      ctx.fillStyle = '#010105'; 
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // 2. Adaptive Parameters 
       const globalTime = now * 0.00002;
       
-      // Attractor Constants tuned for clean, recognizable structure
+      // Attractor Constants tuned for complexity
       const [baseA, baseB, baseC, baseD] = [1.7, -1.9, 2.2, -1.8]; 
       
       const scrollInfluence = currentScrollDepth * 0.25;
@@ -152,11 +138,8 @@ const IntelligentEmergence = () => {
       const d = baseD + Math.cos(globalTime * 0.7) * 0.15;
       
       // Visual Parameters 
-      const symmetry = Math.floor(3 + currentScrollDepth * 4 + timeInfluence * 3); // Dynamic complexity
-      const baseHue = 200; // Clean, high-tech blue/cyan
-      const hue = (baseHue + Math.sin(globalTime * 0.3) * 15) % 360; 
-      const scale = Math.min(canvas.width, canvas.height) * 0.3; // Increased scale for prominence
-      const alpha = 0.5 + currentScrollDepth * 0.3;
+      const symmetry = Math.floor(3 + currentScrollDepth * 4 + timeInfluence * 3); 
+      const scale = Math.min(canvas.width, canvas.height) * 0.3; 
 
       // 3. Update UI State
       setUiParams({
@@ -167,9 +150,10 @@ const IntelligentEmergence = () => {
 
       // 4. Update and Draw Tracers
       const center = { x: centerX, y: centerY };
+      // Pass only necessary drawing params (no hue/alpha needed)
       tracers.forEach(tracer => {
         tracer.update(a, b, c, d, deltaTime);
-        tracer.draw(ctx, center, scale, symmetry, hue, alpha, globalTime); 
+        tracer.draw(ctx, center, scale, symmetry); 
       });
 
       animationRef.current = requestAnimationFrame(animate); 
@@ -188,15 +172,16 @@ const IntelligentEmergence = () => {
     };
   }, []); 
 
-  // --- Render Logic (Unchanged) ---
+  // --- Render Logic (UI content remains the same) ---
   return (
-    <div className="relative w-full min-h-screen bg-[#0a0a0f] overflow-x-hidden">
+    <div className="relative w-full min-h-screen bg-[#010105] overflow-x-hidden">
       <canvas
         ref={canvasRef}
         className="fixed top-0 left-0 w-full h-full"
         style={{ zIndex: 0 }}
       />
       <div className="relative z-10 text-white">
+        {/* Hero Section */}
         <div className="min-h-screen flex flex-col items-center justify-center px-8">
           <div className="max-w-4xl text-center space-y-6">
             <h1 className="text-7xl md:text-8xl font-light tracking-tight">
@@ -210,6 +195,8 @@ const IntelligentEmergence = () => {
             </div>
           </div>
         </div>
+
+        {/* About Section */}
         <div className="min-h-screen flex items-center justify-center px-8">
           <div className="max-w-2xl space-y-8 bg-black/30 backdrop-blur-sm p-12 rounded-lg border border-white/10">
             <h2 className="text-4xl font-light">Intelligent Design</h2>
@@ -226,6 +213,8 @@ const IntelligentEmergence = () => {
             </div>
           </div>
         </div>
+
+        {/* Work Section */}
         <div className="min-h-screen flex items-center justify-center px-8">
           <div className="max-w-3xl space-y-12">
             <h2 className="text-5xl font-light text-center mb-16">Selected Work</h2>
@@ -246,6 +235,8 @@ const IntelligentEmergence = () => {
             </div>
           </div>
         </div>
+
+        {/* Contact Section */}
         <div className="min-h-screen flex items-center justify-center px-8">
           <div className="max-w-2xl text-center space-y-8">
             <h2 className="text-5xl font-light">Let's Build Something Intelligent</h2>
@@ -262,6 +253,8 @@ const IntelligentEmergence = () => {
             </div>
           </div>
         </div>
+
+        {/* Footer */}
         <div className="py-16 text-center text-gray-500 text-sm font-mono">
           <p>© 2025 Studio Struweg · Intelligent by Design</p>
         </div>
