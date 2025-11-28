@@ -76,13 +76,11 @@ const IntelligentEmergence = () => {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, []); // Runs once
 
-  // --- 4b. Scroll Listener Effect (Runs only when view is 'home') ---
+  // --- 4b. Scroll Listener Effect (Runs only when component is mounted) ---
   useEffect(() => {
-    // Only attach listeners if we are on the home view (though state controls the UI, this ensures listeners are removed when switching away)
-    if (view !== 'home') return;
-
+    
     const handleScroll = () => {
       const winScroll = document.documentElement.scrollTop;
       const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
@@ -96,11 +94,10 @@ const IntelligentEmergence = () => {
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [view]); // Dependency on view ensures cleanup/re-attach when switching pages
+  }, []); // Runs once
 
-  // --- 4c. Initialization Effect (Runs only when view is 'home') ---
+  // --- 4c. Initialization Effect (Runs only when component is mounted) ---
   useEffect(() => {
-    if (view !== 'home') return;
     
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -135,11 +132,10 @@ const IntelligentEmergence = () => {
 
     // Cleanup: Remove resize listener
     return () => window.removeEventListener('resize', updateSize);
-  }, [view]); // Dependency on view
+  }, []); // Runs once
 
-  // --- 4d. Animation Effect (Runs only when view is 'home') ---
+  // --- 4d. Animation Effect (Runs only when component is mounted) ---
   useEffect(() => {
-    if (view !== 'home') return;
     
     const canvas = canvasRef.current;
     if (!canvas || stateRef.points.length === 0) return;
@@ -356,7 +352,7 @@ const IntelligentEmergence = () => {
       canvas.removeEventListener("touchend", handleTouchEnd);
       canvas.removeEventListener("touchcancel", handleTouchEnd);
     };
-  }, [view]); // Dependency on view
+  }, []); // Runs once
 
   // --- STANDARD HOME VIEW RENDER ---
   return (
