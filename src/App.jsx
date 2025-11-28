@@ -12,7 +12,7 @@ const dynamicPropsRef = {
   sessionTime: 0,
 };
 
-// **NEW** Ref to hold dynamic motion state (rotation, drag, velocity)
+// Ref to hold dynamic motion state (rotation, drag, velocity)
 // This ensures the event listeners modify the same object the draw loop reads from.
 const dynamicMotionRef = {
   isDragging: false,
@@ -252,7 +252,7 @@ const IntelligentEmergence = () => {
       const pulse = Math.sin(t * 0.04 + dynamicPropsRef.sessionTime * 0.01) * 0.3 + 0.7;
 
       // Update rotation variables directly on the ref
-      dynamicMotionRef.rotY += baseRotY + velocityY;
+      dynamicMotionRef.rotY += baseRotY + velocityX;
       dynamicMotionRef.rotX += velocityX;
       dynamicMotionRef.velocityX *= 0.96;
       dynamicMotionRef.velocityY *= 0.96;
@@ -342,8 +342,8 @@ const IntelligentEmergence = () => {
         />
       </div>
             
-      {/* Content Layer */}
-      <div className="relative z-10 text-white">
+      {/* Content Layer: ADDED pointer-events-none */}
+      <div className="relative z-10 text-white pointer-events-none">
         {/* Hero Section */}
         <div className="min-h-screen flex flex-col items-center justify-center px-8">
           <div className="max-w-4xl text-center space-y-6">
@@ -361,7 +361,7 @@ const IntelligentEmergence = () => {
         
         {/* About Section */}
         <div className="min-h-screen flex items-center justify-center px-8">
-          <div className="max-w-2xl space-y-8 bg-black/30 backdrop-blur-sm p-12 rounded-lg border border-white/10">
+          <div className="max-w-2xl space-y-8 bg-black/30 backdrop-blur-sm p-12 rounded-lg border border-white/10 pointer-events-auto">
             <h2 className="text-4xl font-light">Intelligent Design</h2>
             <p className="text-lg text-gray-300 leading-relaxed">
               We create systems that think, adapt, and evolve. The pattern you see isn't just decoration—it's responding to you. Its symmetry grows with your engagement, its colors shift with your journey, its complexity emerges from your curiosity.
@@ -382,7 +382,7 @@ const IntelligentEmergence = () => {
         <div className="min-h-screen flex items-center justify-center px-8">
           <div className="max-w-3xl space-y-12">
             <h2 className="text-5xl font-light text-center mb-16">Selected Work</h2>
-                        <div className="space-y-8">
+                        <div className="space-y-8 pointer-events-auto">
               {[
                 { title: 'Adaptive Systems', desc: 'Platforms that learn and evolve with their users' },
                 { title: 'Emergent Interfaces', desc: 'UI that responds to context and intent' },
@@ -410,7 +410,7 @@ const IntelligentEmergence = () => {
             <div className="pt-8">
               <a 
                 href="mailto:hello@studiostruweg.com"
-                className="inline-block px-8 py-4 border border-white/30 rounded-full hover:bg-white/10 transition-all text-lg"
+                className="inline-block px-8 py-4 border border-white/30 rounded-full hover:bg-white/10 transition-all text-lg pointer-events-auto"
               >
                 Start a Conversation
               </a>
