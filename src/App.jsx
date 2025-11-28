@@ -23,11 +23,11 @@ const StudioStruweg = () => {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Set canvas size to 65% of viewport
+    // Set canvas size to the size of its parent container (which will be fixed to viewport)
     const updateSize = () => {
-      const size = Math.min(window.innerWidth, window.innerHeight) * 1;
-      canvas.width = size;
-      canvas.height = size;
+      // Set canvas dimensions to the current window size
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
     };
     updateSize();
     window.addEventListener('resize', updateSize);
@@ -36,15 +36,19 @@ const StudioStruweg = () => {
     const height = canvas.height;
 
     const POINTS = 1500;
+    // Base radius is now based on the smaller of the two dimensions for a square shape within the canvas
     const RADIUS = Math.min(width, height) * 0.4;
-    
+
+    // **CHANGE 1: Define the maximum dot radius (3px for a 6px diameter)**
+    const MAX_DOT_RADIUS = 3; 
+
     // Color shifts based on scroll depth
     const getColor = () => {
       const hue = 220 - (scrollDepth * 80); // Blue -> Purple -> Pink
       const saturation = 70 + (scrollDepth * 20);
       return `hsl(${hue}, ${saturation}%, 30%)`;
     };
-    
+
     const points = [];
     let t = 0;
 
@@ -166,9 +170,13 @@ const StudioStruweg = () => {
     }
 
     function draw() {
+      // Re-fetch width and height in case of a resize event between frames
+      const currentWidth = canvas.width;
+      const currentHeight = canvas.height;
+
       if (!ctx) return;
       
-      ctx.clearRect(0, 0, width, height);
+      ctx.clearRect(0, 0, currentWidth, currentHeight);
 
       const pulse = Math.sin(t * 0.04) * 0.3 + 0.7;
 
@@ -178,14 +186,14 @@ const StudioStruweg = () => {
       velocityY *= 0.96;
       rotX = Math.max(Math.min(rotX, Math.PI / 3), -Math.PI / 3);
 
-      const cx = width / 2;
-      const cy = height / 2;
+      const cx = currentWidth / 2;
+      const cy = currentHeight / 2;
       let proximityBoost = 1;
       if (mouse.active) {
         const dx = mouse.x - cx;
         const dy = mouse.y - cy;
         const d = Math.sqrt(dx * dx + dy * dy);
-        const proximity = Math.max(0, 1 - d / (Math.min(width, height) / 2));
+        const proximity = Math.max(0, 1 - d / (Math.min(currentWidth, currentHeight) / 2));
         proximityBoost = 1 + proximity * 2;
         rotY += dx * 0.000001 * proximity;
         rotX -= dy * 0.000001 * proximity;
@@ -220,7 +228,10 @@ const StudioStruweg = () => {
 
         const alpha = 0.25 + 0.75 * (1 - dist / RADIUS);
         const depthBias = Math.pow(pr.scale, 1.5);
-        const size = 1.2 * pr.scale * (1 + depthBias * 0.8);
+        
+        // **CHANGE 2: Update the point size calculation**
+        // Base size is now MAX_DOT_RADIUS (3px)
+        const size = MAX_DOT_RADIUS * pr.scale * (1 + depthBias * 0.8);
 
         ctx.beginPath();
         ctx.fillStyle = COLOR;
@@ -238,6 +249,7 @@ const StudioStruweg = () => {
 
     return () => {
       cancelAnimationFrame(animationId);
+      // Removed event listeners for brevity, assume they are handled correctly as in the original code
       canvas.removeEventListener("mousemove", handleMouseMove);
       canvas.removeEventListener("mousedown", handleMouseDown);
       canvas.removeEventListener("mouseup", handleMouseUp);
@@ -251,12 +263,15 @@ const StudioStruweg = () => {
   }, [scrollDepth]);
 
   return (
-    <div className="relative w-full min-h-screen bg-black overflow-x-hidden">
+    // **CHANGE 3: Ensure the main container is full width and hides horizontal overflow**
+    <div className="relative w-screen min-h-screen bg-black overflow-x-hidden">
       {/* Fixed Canvas Background */}
-      <div className="fixed inset-0 flex items-center justify-center" style={{ zIndex: 0 }}>
+      {/* **CHANGE 4: The fixed container now uses w-screen and h-screen to fill the viewport** */}
+      <div className="fixed inset-0 flex items-center justify-center w-screen h-screen" style={{ zIndex: 0 }}>
         <canvas
           ref={canvasRef}
           style={{ cursor: "grab" }}
+          // The canvas itself will take the full width/height of the w-screen/h-screen parent via the updateSize function
           className="opacity-70"
         />
       </div>
