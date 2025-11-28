@@ -6,16 +6,30 @@ const stateRef = {
   RADIUS: 0,
 };
 
-// Ref to hold dynamic state values that change frequently but shouldn't restart the animation loop
+// Ref to hold dynamic state values (color changes)
 const dynamicPropsRef = {
   scrollDepth: 0,
   sessionTime: 0,
 };
 
+// **NEW** Ref to hold dynamic motion state (rotation, drag, velocity)
+// This ensures the event listeners modify the same object the draw loop reads from.
+const dynamicMotionRef = {
+  isDragging: false,
+  lastX: 0, 
+  lastY: 0,
+  velocityX: 0, 
+  velocityY: 0,
+  rotX: 0, 
+  rotY: 0,
+  baseRotY: 0.002,
+  mouse: { x: 0, y: 0, active: false },
+};
+
 // Configuration constants for the point cloud visualization
 const PERSPECTIVE_DEPTH = 2000; // Viewer distance (2000 for "further away")
-const MAX_DOT_RADIUS = 3;       // Max dot size (1.5px radius / 3px diameter)
-const POINTS = 2000;            // Number of points in the cloud
+const MAX_DOT_RADIUS = 3;       // Max dot size (3px radius / 6px diameter)
+const POINTS = 1500;            // Number of points in the cloud
 
 const IntelligentEmergence = () => {
   const canvasRef = useRef(null);
@@ -28,7 +42,7 @@ const IntelligentEmergence = () => {
     const timer = setInterval(() => {
       setSessionTime(prev => {
         const newTime = prev + 1;
-        dynamicPropsRef.sessionTime = newTime; // Update ref for animation
+        dynamicPropsRef.sessionTime = newTime; // Update ref for animation pulse
         return newTime;
       });
     }, 1000);
@@ -119,43 +133,49 @@ const IntelligentEmergence = () => {
       return `hsl(${hue}, ${saturation}%, 30%)`;
     };
     
-    let t = 0;
-    let isDragging = false;
-    let lastX = 0, lastY = 0;
-    let velocityX = 0, velocityY = 0;
-    let rotX = 0, rotY = 0;
-    const baseRotY = 0.002;
-    const mouse = { x: 0, y: 0, active: false };
+    let t = 0; // Time counter
 
-    // --- Interaction Handlers (omitted for brevity, they remain the same) ---
+    // --- Interaction Handlers (Now directly modifying dynamicMotionRef) ---
     const handleMouseMove = (e) => { 
       const rect = canvas.getBoundingClientRect();
+      const mouse = dynamicMotionRef.mouse;
+
       mouse.x = e.clientX - rect.left;
       mouse.y = e.clientY - rect.top;
       mouse.active = true;
 
-      if (isDragging) {
-        const dx = e.clientX - lastX;
-        const dy = e.clientY - lastY;
+      if (dynamicMotionRef.isDragging) {
+        const dx = e.clientX - dynamicMotionRef.lastX;
+        const dy = e.clientY - dynamicMotionRef.lastY;
 
-        velocityY = -dx * 0.002;
-        velocityX = dy * 0.002;
+        dynamicMotionRef.velocityY = -dx * 0.002;
+        dynamicMotionRef.velocityX = dy * 0.002;
 
-        lastX = e.clientX;
-        lastY = e.clientY;
+        dynamicMotionRef.lastX = e.clientX;
+        dynamicMotionRef.lastY = e.clientY;
       }
     };
     
-    const handleMouseDown = (e) => { isDragging = true; lastX = e.clientX; lastY = e.clientY; };
-    const handleMouseUp = () => { isDragging = false; };
-    const handleMouseLeave = () => { isDragging = false; mouse.active = false; };
+    const handleMouseDown = (e) => { 
+      dynamicMotionRef.isDragging = true; 
+      dynamicMotionRef.lastX = e.clientX; 
+      dynamicMotionRef.lastY = e.clientY; 
+    };
+    const handleMouseUp = () => { 
+      dynamicMotionRef.isDragging = false; 
+    };
+    const handleMouseLeave = () => { 
+      dynamicMotionRef.isDragging = false; 
+      dynamicMotionRef.mouse.active = false; 
+    };
 
     const handleTouchStart = (e) => { 
         e.preventDefault();
         const touch = e.touches[0];
-        isDragging = true;
-        lastX = touch.clientX;
-        lastY = touch.clientY;
+        const mouse = dynamicMotionRef.mouse;
+        dynamicMotionRef.isDragging = true;
+        dynamicMotionRef.lastX = touch.clientX;
+        dynamicMotionRef.lastY = touch.clientY;
         const rect = canvas.getBoundingClientRect();
         mouse.x = touch.clientX - rect.left;
         mouse.y = touch.clientY - rect.top;
@@ -164,23 +184,27 @@ const IntelligentEmergence = () => {
     const handleTouchMove = (e) => { 
         e.preventDefault();
         const touch = e.touches[0];
+        const mouse = dynamicMotionRef.mouse;
         const rect = canvas.getBoundingClientRect();
         mouse.x = touch.clientX - rect.left;
         mouse.y = touch.clientY - rect.top;
         mouse.active = true;
 
-        if (isDragging) {
-          const dx = touch.clientX - lastX;
-          const dy = touch.clientY - lastY;
+        if (dynamicMotionRef.isDragging) {
+          const dx = touch.clientX - dynamicMotionRef.lastX;
+          const dy = touch.clientY - dynamicMotionRef.lastY;
 
-          velocityY = -dx * 0.002;
-          velocityX = dy * 0.002;
+          dynamicMotionRef.velocityY = -dx * 0.002;
+          dynamicMotionRef.velocityX = dy * 0.002;
 
-          lastX = touch.clientX;
-          lastY = touch.clientY;
+          dynamicMotionRef.lastX = touch.clientX;
+          dynamicMotionRef.lastY = touch.clientY;
         }
     };
-    const handleTouchEnd = () => { isDragging = false; mouse.active = false; };
+    const handleTouchEnd = () => { 
+      dynamicMotionRef.isDragging = false; 
+      dynamicMotionRef.mouse.active = false; 
+    };
 
 
     canvas.addEventListener("mousemove", handleMouseMove);
@@ -214,6 +238,9 @@ const IntelligentEmergence = () => {
 
     // --- Draw Loop ---
     function draw() {
+      // Read motion state from ref
+      const { baseRotY, velocityX, velocityY, rotX, rotY, mouse } = dynamicMotionRef;
+
       // Re-fetch width and height in case of a resize event between frames
       const currentWidth = canvas.width;
       const currentHeight = canvas.height;
@@ -224,23 +251,25 @@ const IntelligentEmergence = () => {
       // ACCESS REF FOR PULSE/COLOR
       const pulse = Math.sin(t * 0.04 + dynamicPropsRef.sessionTime * 0.01) * 0.3 + 0.7;
 
-      rotY += baseRotY + velocityY;
-      rotX += velocityX;
-      velocityX *= 0.96;
-      velocityY *= 0.96;
-      rotX = Math.max(Math.min(rotX, Math.PI / 3), -Math.PI / 3);
+      // Update rotation variables directly on the ref
+      dynamicMotionRef.rotY += baseRotY + velocityY;
+      dynamicMotionRef.rotX += velocityX;
+      dynamicMotionRef.velocityX *= 0.96;
+      dynamicMotionRef.velocityY *= 0.96;
+      dynamicMotionRef.rotX = Math.max(Math.min(dynamicMotionRef.rotX, Math.PI / 3), -Math.PI / 3);
 
       const cx = currentWidth / 2;
       const cy = currentHeight / 2;
       let proximityBoost = 1;
+
       if (mouse.active) {
         const dx = mouse.x - cx;
         const dy = mouse.y - cy;
         const d = Math.sqrt(dx * dx + dy * dy);
         const proximity = Math.max(0, 1 - d / (Math.min(currentWidth, currentHeight) / 2));
         proximityBoost = 1 + proximity * 2;
-        rotY += dx * 0.000001 * proximity;
-        rotX -= dy * 0.000001 * proximity;
+        dynamicMotionRef.rotY += dx * 0.000001 * proximity;
+        dynamicMotionRef.rotX -= dy * 0.000001 * proximity;
       }
 
       const COLOR = getColor(); // Color updates based on ref value
@@ -250,7 +279,9 @@ const IntelligentEmergence = () => {
         const dist = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
         const wave = Math.sin(dist / 10 - t * 0.1);
         const amp = wave * 6 * pulse;
-        const pr = project({ x: p.x, y: p.y, z: p.z + amp }, rotY, rotX);
+        
+        // Pass the updated rotation values from the ref to project
+        const pr = project({ x: p.x, y: p.y, z: p.z + amp }, dynamicMotionRef.rotY, dynamicMotionRef.rotX);
 
         if (mouse.active) {
           const dx = pr.px - mouse.x;
@@ -299,7 +330,7 @@ const IntelligentEmergence = () => {
       canvas.removeEventListener("touchend", handleTouchEnd);
       canvas.removeEventListener("touchcancel", handleTouchEnd);
     };
-  }, []); // <-- Dependency array is now EMPTY!
+  }, []); // Dependency array is EMPTY: runs once.
 
   return (
     <div className="relative w-screen min-h-screen bg-[#0a0a0f] overflow-x-hidden">
