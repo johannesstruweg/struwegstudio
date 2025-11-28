@@ -35,8 +35,8 @@ const StudioStruweg = () => {
     const width = canvas.width;
     const height = canvas.height;
 
-    const POINTS = 10000;
-    const RADIUS = Math.min(width, height) * 0.44;
+    const POINTS = 2000;
+    const RADIUS = Math.min(width, height) * 0.1;
     
     // Color shifts based on scroll depth
     const getColor = () => {
