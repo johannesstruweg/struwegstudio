@@ -36,13 +36,13 @@ const StudioStruweg = () => {
     const height = canvas.height;
 
     const POINTS = 1500;
-    const RADIUS = Math.min(width, height) * 0.8;
+    const RADIUS = Math.min(width, height) * 0.4;
     
     // Color shifts based on scroll depth
     const getColor = () => {
       const hue = 220 - (scrollDepth * 80); // Blue -> Purple -> Pink
       const saturation = 70 + (scrollDepth * 20);
-      return `hsl(${hue}, ${saturation}%, 60%)`;
+      return `hsl(${hue}, ${saturation}%, 30%)`;
     };
     
     const points = [];
