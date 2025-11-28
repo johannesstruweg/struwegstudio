@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+// 1. IMPORT THE NEW COMPONENT
+import ComputationalWaveField from './WaveFieldGenerator.jsx';
 
 // Stable Ref for point cloud data and parameters that should not be recalculated on every scroll update.
 const stateRef = {
@@ -35,6 +37,35 @@ const IntelligentEmergence = () => {
   const canvasRef = useRef(null);
   const [scrollDepth, setScrollDepth] = useState(0); // Kept for content rendering
   const [sessionTime, setSessionTime] = useState(0); // Kept for content rendering
+  
+  // 2. STATE FOR ROUTING: Manages the current view ('home' or 'wave')
+  const [view, setView] = useState('home'); 
+
+  // Function to switch view back to home
+  const handleGoHome = () => {
+      setView('home');
+      // Scroll to top when returning home
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  
+  // 3. CONDITIONAL RENDERING (THE "ROUTER")
+  // If view is 'wave', stop rendering the home page and render the new component.
+  if (view === 'wave') {
+      return (
+          <div className="w-screen h-screen relative">
+              {/* Renders the full-page wave field component */}
+              <ComputationalWaveField />
+              <button
+                  onClick={handleGoHome}
+                  className="fixed top-4 left-4 z-50 px-4 py-2 bg-white/10 text-white border border-white/30 rounded-lg backdrop-blur-sm hover:bg-white/20 transition-all text-sm"
+              >
+                  ← Back to Studio
+              </button>
+          </div>
+      );
+  }
+
+  // --- STANDARD HOME VIEW EFFECTS START HERE ---
 
   // --- 1. Session Timer Effect ---
   // Updates the session time every second and updates the ref.
@@ -130,12 +161,12 @@ const IntelligentEmergence = () => {
       const currentScrollDepth = dynamicPropsRef.scrollDepth;
       const hue = 220 - (currentScrollDepth * 80); // Blue -> Purple -> Pink
       const saturation = 70 + (currentScrollDepth * 20);
-      return `hsl(${hue}, ${saturation}%, 30%)`;
+      return `hsl(${hue}, 70%, ${saturation}%)`;
     };
     
     let t = 0; // Time counter
 
-    // --- Interaction Handlers (Now directly modifying dynamicMotionRef) ---
+    // --- Interaction Handlers ---
     const handleMouseMove = (e) => { 
       const rect = canvas.getBoundingClientRect();
       const mouse = dynamicMotionRef.mouse;
@@ -342,7 +373,7 @@ const IntelligentEmergence = () => {
         />
       </div>
             
-      {/* Content Layer: ADDED pointer-events-none */}
+      {/* Content Layer */}
       <div className="relative z-10 text-white pointer-events-none">
         {/* Hero Section */}
         <div className="min-h-screen flex flex-col items-center justify-center px-8">
@@ -386,14 +417,20 @@ const IntelligentEmergence = () => {
               {[
                 { title: 'Adaptive Systems', desc: 'Platforms that learn and evolve with their users' },
                 { title: 'Emergent Interfaces', desc: 'UI that responds to context and intent' },
-                { title: 'Computational Design', desc: 'Where algorithm meets aesthetics' }
+                // 4. THE ACTION: This links the click event to the routing function
+                { title: 'Computational Design', desc: 'Where algorithm meets aesthetics', action: () => setView('wave') }
               ].map((project, i) => (
                 <div 
                   key={i}
-                  className="bg-black/20 backdrop-blur-sm p-8 rounded-lg border border-white/10 hover:border-white/30 transition-all cursor-pointer"
+                  // ADDED: onClick handler to switch the view
+                  onClick={project.action || (() => {})} 
+                  className={`bg-black/20 backdrop-blur-sm p-8 rounded-lg border border-white/10 hover:border-white/30 transition-all cursor-pointer ${project.action ? 'hover:scale-[1.01] transition-transform' : ''}`}
                 >
                   <h3 className="text-2xl font-light mb-3">{project.title}</h3>
                   <p className="text-gray-400">{project.desc}</p>
+                  {project.action && (
+                      <span className="mt-2 inline-block text-sm text-indigo-400">→ View Interactive Demo</span>
+                  )}
                 </div>
               ))}
             </div>
