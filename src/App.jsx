@@ -25,7 +25,7 @@ const StudioStruweg = () => {
 
     // Set canvas size to 65% of viewport
     const updateSize = () => {
-      const size = Math.min(window.innerWidth, window.innerHeight) * 0.9;
+      const size = Math.min(window.innerWidth, window.innerHeight) * 1;
       canvas.width = size;
       canvas.height = size;
     };
