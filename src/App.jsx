@@ -6,6 +6,12 @@ const stateRef = {
   RADIUS: 0,
 };
 
+// Ref to hold dynamic state values that change frequently but shouldn't restart the animation loop
+const dynamicPropsRef = {
+  scrollDepth: 0,
+  sessionTime: 0,
+};
+
 // Configuration constants for the point cloud visualization
 const PERSPECTIVE_DEPTH = 2000; // Viewer distance (2000 for "further away")
 const MAX_DOT_RADIUS = 3;       // Max dot size (3px radius / 6px diameter)
@@ -13,25 +19,34 @@ const POINTS = 1500;            // Number of points in the cloud
 
 const IntelligentEmergence = () => {
   const canvasRef = useRef(null);
-  const [scrollDepth, setScrollDepth] = useState(0);
-  const [sessionTime, setSessionTime] = useState(0);
+  const [scrollDepth, setScrollDepth] = useState(0); // Kept for content rendering
+  const [sessionTime, setSessionTime] = useState(0); // Kept for content rendering
 
   // --- 1. Session Timer Effect ---
-  // Updates the session time every second.
+  // Updates the session time every second and updates the ref.
   useEffect(() => {
     const timer = setInterval(() => {
-      setSessionTime(prev => prev + 1);
+      setSessionTime(prev => {
+        const newTime = prev + 1;
+        dynamicPropsRef.sessionTime = newTime; // Update ref for animation
+        return newTime;
+      });
     }, 1000);
     return () => clearInterval(timer);
   }, []);
 
   // --- 2. Scroll Listener Effect ---
-  // Calculates the scroll depth (0 to 1) and updates state.
+  // Calculates the scroll depth (0 to 1), updates state for UI, and updates the ref for animation.
   useEffect(() => {
     const handleScroll = () => {
       const winScroll = document.documentElement.scrollTop;
       const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
       const scrolled = height > 0 ? (winScroll / height) : 0;
+      
+      // Update ref for animation (seamless color change)
+      dynamicPropsRef.scrollDepth = scrolled; 
+
+      // Update state for UI elements (like the 'Depth' counter)
       setScrollDepth(scrolled);
     };
     window.addEventListener('scroll', handleScroll);
@@ -80,7 +95,7 @@ const IntelligentEmergence = () => {
     return () => window.removeEventListener('resize', updateSize);
   }, []); // Dependency array is empty: runs once.
 
-  // --- 4. Animation Effect: Runs on mount and whenever scroll/time changes color/speed ---
+  // --- 4. Animation Effect: Runs ONCE to start the persistent draw loop ---
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || stateRef.points.length === 0) return;
@@ -96,10 +111,11 @@ const IntelligentEmergence = () => {
     const width = canvas.width;
     const height = canvas.height;
 
-    // Color shifts based on scroll depth (Only color changes on scroll, not geometry)
+    // Color shifts based on current ref value (updated by scroll listener)
     const getColor = () => {
-      const hue = 220 - (scrollDepth * 80); // Blue -> Purple -> Pink
-      const saturation = 70 + (scrollDepth * 20);
+      const currentScrollDepth = dynamicPropsRef.scrollDepth;
+      const hue = 220 - (currentScrollDepth * 80); // Blue -> Purple -> Pink
+      const saturation = 70 + (currentScrollDepth * 20);
       return `hsl(${hue}, ${saturation}%, 30%)`;
     };
     
@@ -111,7 +127,7 @@ const IntelligentEmergence = () => {
     const baseRotY = 0.002;
     const mouse = { x: 0, y: 0, active: false };
 
-    // --- Interaction Handlers ---
+    // --- Interaction Handlers (omitted for brevity, they remain the same) ---
     const handleMouseMove = (e) => { 
       const rect = canvas.getBoundingClientRect();
       mouse.x = e.clientX - rect.left;
@@ -176,6 +192,7 @@ const IntelligentEmergence = () => {
     canvas.addEventListener("touchend", handleTouchEnd);
     canvas.addEventListener("touchcancel", handleTouchEnd);
 
+
     // --- Projection Function ---
     function project(p, rotY, rotX) {
       const cosY = Math.cos(rotY);
@@ -204,8 +221,8 @@ const IntelligentEmergence = () => {
       
       ctx.clearRect(0, 0, currentWidth, currentHeight);
 
-      // Pulse rate is slightly affected by session time to keep it dynamic
-      const pulse = Math.sin(t * 0.04 + sessionTime * 0.01) * 0.3 + 0.7;
+      // ACCESS REF FOR PULSE/COLOR
+      const pulse = Math.sin(t * 0.04 + dynamicPropsRef.sessionTime * 0.01) * 0.3 + 0.7;
 
       rotY += baseRotY + velocityY;
       rotX += velocityX;
@@ -226,7 +243,7 @@ const IntelligentEmergence = () => {
         rotX -= dy * 0.000001 * proximity;
       }
 
-      const COLOR = getColor(); // Color updates based on scrollDepth
+      const COLOR = getColor(); // Color updates based on ref value
 
       for (let i = 0; i < points.length; i++) {
         const p = points[i];
@@ -282,7 +299,7 @@ const IntelligentEmergence = () => {
       canvas.removeEventListener("touchend", handleTouchEnd);
       canvas.removeEventListener("touchcancel", handleTouchEnd);
     };
-  }, [scrollDepth, sessionTime]); // Re-run effect when color/pulse rate needs updating
+  }, []); // <-- Dependency array is now EMPTY!
 
   return (
     <div className="relative w-screen min-h-screen bg-[#0a0a0f] overflow-x-hidden">
