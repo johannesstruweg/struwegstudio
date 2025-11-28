@@ -25,7 +25,7 @@ const StudioStruweg = () => {
 
     // Set canvas size to 65% of viewport
     const updateSize = () => {
-      const size = Math.min(window.innerWidth, window.innerHeight) * 0.65;
+      const size = Math.min(window.innerWidth, window.innerHeight) * 0.9;
       canvas.width = size;
       canvas.height = size;
     };
@@ -35,7 +35,7 @@ const StudioStruweg = () => {
     const width = canvas.width;
     const height = canvas.height;
 
-    const POINTS = 1000;
+    const POINTS = 10000;
     const RADIUS = Math.min(width, height) * 0.44;
     
     // Color shifts based on scroll depth
