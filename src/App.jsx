@@ -14,8 +14,8 @@ const dynamicPropsRef = {
 
 // Configuration constants for the point cloud visualization
 const PERSPECTIVE_DEPTH = 2000; // Viewer distance (2000 for "further away")
-const MAX_DOT_RADIUS = 3;       // Max dot size (3px radius / 6px diameter)
-const POINTS = 1500;            // Number of points in the cloud
+const MAX_DOT_RADIUS = 3;       // Max dot size (1.5px radius / 3px diameter)
+const POINTS = 2000;            // Number of points in the cloud
 
 const IntelligentEmergence = () => {
   const canvasRef = useRef(null);
