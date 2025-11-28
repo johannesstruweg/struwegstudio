@@ -1,21 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react';
-// 1. IMPORT THE NEW COMPONENT
 import ComputationalWaveField from './WaveFieldGenerator.jsx';
 
-// Stable Ref for point cloud data and parameters that should not be recalculated on every scroll update.
+// Stable Ref for point cloud data (outside component to persist across renders)
 const stateRef = {
   points: [],
   RADIUS: 0,
 };
 
-// Ref to hold dynamic state values (color changes)
+// Ref for dynamic color changes
 const dynamicPropsRef = {
   scrollDepth: 0,
   sessionTime: 0,
 };
 
-// Ref to hold dynamic motion state (rotation, drag, velocity)
-// This ensures the event listeners modify the same object the draw loop reads from.
+// Ref for motion state
 const dynamicMotionRef = {
   isDragging: false,
   lastX: 0, 
@@ -28,273 +26,144 @@ const dynamicMotionRef = {
   mouse: { x: 0, y: 0, active: false },
 };
 
-// Configuration constants for the point cloud visualization
-const PERSPECTIVE_DEPTH = 2000; // Viewer distance (2000 for "further away")
-const MAX_DOT_RADIUS = 3;       // Max dot size (3px radius / 6px diameter)
-const POINTS = 1500;            // Number of points in the cloud
+const PERSPECTIVE_DEPTH = 2000;
+const MAX_DOT_RADIUS = 3;
+const POINTS = 1500;
 
 const IntelligentEmergence = () => {
-  // --- 1. UNCONDITIONAL HOOKS (MUST BE CALLED FIRST) ---
+  // 1. ALL HOOKS MUST BE DECLARED AT THE TOP LEVEL (UNCONDITIONALLY)
   const canvasRef = useRef(null);
-  const [scrollDepth, setScrollDepth] = useState(0); // Kept for content rendering
-  const [sessionTime, setSessionTime] = useState(0); // Kept for content rendering
-  const [view, setView] = useState('home'); 
+  const [scrollDepth, setScrollDepth] = useState(0);
+  const [sessionTime, setSessionTime] = useState(0);
+  const [view, setView] = useState('home');
 
-  // Function to switch view back to home
   const handleGoHome = () => {
-      setView('home');
-      // Scroll to top when returning home
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+    setView('home');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
-  
-  // 3. CONDITIONAL RENDERING (THE "ROUTER")
-  // If view is 'wave', stop rendering the home page and render the new component.
-  if (view === 'wave') {
-      return (
-          <div className="w-screen h-screen relative">
-              {/* Renders the full-page wave field component */}
-              <ComputationalWaveField />
-              <button
-                  onClick={handleGoHome}
-                  className="fixed top-4 left-4 z-50 px-4 py-2 bg-white/10 text-white border border-white/30 rounded-lg backdrop-blur-sm hover:bg-white/20 transition-all text-sm"
-              >
-                  ← Back to Studio
-              </button>
-          </div>
-      );
-  }
 
-  // --- 4. CONDITIONAL EFFECTS FOR HOME VIEW ONLY ---
-  
-  // --- 4a. Session Timer Effect (Runs always, but updates ref) ---
+  // --- EFFECT 1: Session Timer (Runs once on mount) ---
   useEffect(() => {
     const timer = setInterval(() => {
       setSessionTime(prev => {
         const newTime = prev + 1;
-        dynamicPropsRef.sessionTime = newTime; // Update ref for animation pulse
+        dynamicPropsRef.sessionTime = newTime;
         return newTime;
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, []); // Runs once
+  }, []);
 
-  // --- 4b. Scroll Listener Effect (Runs only when component is mounted) ---
+  // --- EFFECT 2: Scroll Listener ---
   useEffect(() => {
-    
     const handleScroll = () => {
       const winScroll = document.documentElement.scrollTop;
       const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
       const scrolled = height > 0 ? (winScroll / height) : 0;
-      
-      // Update ref for animation (seamless color change)
-      dynamicPropsRef.scrollDepth = scrolled; 
-
-      // Update state for UI elements (like the 'Depth' counter)
+      dynamicPropsRef.scrollDepth = scrolled;
       setScrollDepth(scrolled);
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []); // Runs once
+  }, []);
 
-  // --- 4c. Initialization Effect (Runs only when component is mounted) ---
+  // --- EFFECT 3: Point Cloud Initialization & Animation ---
   useEffect(() => {
-    
+    // GUARD: Only run this logic if we are on the 'home' view
+    if (view !== 'home') return;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Function to set canvas size and initialize/update RADIUS and POINTS
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // 1. Resize Handler
     const updateSize = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
+      stateRef.RADIUS = Math.min(canvas.width, canvas.height) * 0.4;
       
-      const width = canvas.width;
-      const height = canvas.height;
-      
-      stateRef.RADIUS = Math.min(width, height) * 0.4;
-
+      // Initialize points if needed
       if (stateRef.points.length !== POINTS) {
         stateRef.points = [];
-        
         for (let i = 0; i < POINTS; i++) {
           const theta = Math.acos(2 * Math.random() - 1);
           const phi = 2 * Math.PI * Math.random();
           const r = stateRef.RADIUS * Math.cbrt(Math.random());
-          const x = r * Math.sin(theta) * Math.cos(phi);
-          const y = r * Math.sin(theta) * Math.sin(phi);
-          const z = r * Math.cos(theta);
-          stateRef.points.push({ x, y, z, offsetX: 0, offsetY: 0 });
+          stateRef.points.push({
+            x: r * Math.sin(theta) * Math.cos(phi),
+            y: r * Math.sin(theta) * Math.sin(phi),
+            z: r * Math.cos(theta),
+            offsetX: 0, offsetY: 0
+          });
         }
       }
     };
-
+    
+    // Initial setup
     updateSize();
     window.addEventListener('resize', updateSize);
 
-    // Cleanup: Remove resize listener
-    return () => window.removeEventListener('resize', updateSize);
-  }, []); // Runs once
-
-  // --- 4d. Animation Effect (Runs only when component is mounted) ---
-  useEffect(() => {
-    
-    const canvas = canvasRef.current;
-    if (!canvas || stateRef.points.length === 0) return;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    
-    const points = stateRef.points;
-    const RADIUS = stateRef.RADIUS;
-    const width = canvas.width;
-    const height = canvas.height;
-
+    // 2. Animation Loop Helpers
     const getColor = () => {
       const currentScrollDepth = dynamicPropsRef.scrollDepth;
-      const hue = 220 - (currentScrollDepth * 80); // Blue -> Purple -> Pink
+      const hue = 220 - (currentScrollDepth * 80);
       const saturation = 70 + (currentScrollDepth * 20);
       return `hsl(${hue}, 70%, ${saturation}%)`;
     };
-    
-    let t = 0; // Time counter
 
-    // --- Interaction Handlers ---
-    const handleMouseMove = (e) => { 
-      const rect = canvas.getBoundingClientRect();
-      const mouse = dynamicMotionRef.mouse;
-
-      mouse.x = e.clientX - rect.left;
-      mouse.y = e.clientY - rect.top;
-      mouse.active = true;
-
-      if (dynamicMotionRef.isDragging) {
-        const dx = e.clientX - dynamicMotionRef.lastX;
-        const dy = e.clientY - dynamicMotionRef.lastY;
-
-        dynamicMotionRef.velocityY = -dx * 0.002;
-        dynamicMotionRef.velocityX = dy * 0.002;
-
-        dynamicMotionRef.lastX = e.clientX;
-        dynamicMotionRef.lastY = e.clientY;
-      }
-    };
-    
-    const handleMouseDown = (e) => { 
-      dynamicMotionRef.isDragging = true; 
-      dynamicMotionRef.lastX = e.clientX; 
-      dynamicMotionRef.lastY = e.clientY; 
-    };
-    const handleMouseUp = () => { 
-      dynamicMotionRef.isDragging = false; 
-    };
-    const handleMouseLeave = () => { 
-      dynamicMotionRef.isDragging = false; 
-      dynamicMotionRef.mouse.active = false; 
-    };
-
-    const handleTouchStart = (e) => { 
-        e.preventDefault();
-        const touch = e.touches[0];
-        const mouse = dynamicMotionRef.mouse;
-        dynamicMotionRef.isDragging = true;
-        dynamicMotionRef.lastX = touch.clientX;
-        dynamicMotionRef.lastY = touch.clientY;
-        const rect = canvas.getBoundingClientRect();
-        mouse.x = touch.clientX - rect.left;
-        mouse.y = touch.clientY - rect.top;
-        mouse.active = true;
-    };
-    const handleTouchMove = (e) => { 
-        e.preventDefault();
-        const touch = e.touches[0];
-        const mouse = dynamicMotionRef.mouse;
-        const rect = canvas.getBoundingClientRect();
-        mouse.x = touch.clientX - rect.left;
-        mouse.y = touch.clientY - rect.top;
-        mouse.active = true;
-
-        if (dynamicMotionRef.isDragging) {
-          const dx = touch.clientX - dynamicMotionRef.lastX;
-          const dy = touch.clientY - dynamicMotionRef.lastY;
-
-          dynamicMotionRef.velocityY = -dx * 0.002;
-          dynamicMotionRef.velocityX = dy * 0.002;
-
-          dynamicMotionRef.lastX = touch.clientX;
-          dynamicMotionRef.lastY = touch.clientY;
-        }
-    };
-    const handleTouchEnd = () => { 
-      dynamicMotionRef.isDragging = false; 
-      dynamicMotionRef.mouse.active = false; 
-    };
-
-
-    canvas.addEventListener("mousemove", handleMouseMove);
-    canvas.addEventListener("mousedown", handleMouseDown);
-    canvas.addEventListener("mouseup", handleMouseUp);
-    canvas.addEventListener("mouseleave", handleMouseLeave);
-    canvas.addEventListener("touchstart", handleTouchStart, { passive: false });
-    canvas.addEventListener("touchmove", handleTouchMove, { passive: false });
-    canvas.addEventListener("touchend", handleTouchEnd);
-    canvas.addEventListener("touchcancel", handleTouchEnd);
-
-
-    // --- Projection Function ---
     function project(p, rotY, rotX) {
       const cosY = Math.cos(rotY);
       const sinY = Math.sin(rotY);
       let x = p.x * cosY + p.z * sinY;
       let z = p.z * cosY - p.x * sinY;
       let y = p.y;
-
       const cosX = Math.cos(rotX);
       const sinX = Math.sin(rotX);
       let y2 = y * cosX - z * sinX;
       let z2 = z * cosX + y * sinX;
-
       const scale = PERSPECTIVE_DEPTH / (PERSPECTIVE_DEPTH + z2);
-      const px = width / 2 + x * scale;
-      const py = height / 2 + y2 * scale;
-      return { px, py, scale, z: z2 };
+      return { px: canvas.width / 2 + x * scale, py: canvas.height / 2 + y2 * scale, scale, z: z2 };
     }
 
-    // --- Draw Loop ---
-    function draw() {
-      // Read motion state from ref
-      const { baseRotY, velocityX, velocityY, rotX, rotY, mouse } = dynamicMotionRef;
+    let t = 0;
+    let animationId;
 
-      // Re-fetch width and height in case of a resize event between frames
-      const currentWidth = canvas.width;
-      const currentHeight = canvas.height;
+    // 3. The Draw Function
+    const draw = () => {
       if (!ctx) return;
       
-      ctx.clearRect(0, 0, currentWidth, currentHeight);
+      // Clear canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // ACCESS REF FOR PULSE/COLOR
+      // Access Refs
+      const { baseRotY, velocityX, velocityY, rotX, rotY, mouse } = dynamicMotionRef;
       const pulse = Math.sin(t * 0.04 + dynamicPropsRef.sessionTime * 0.01) * 0.3 + 0.7;
 
-      // Update rotation variables directly on the ref
+      // Update Motion
       dynamicMotionRef.rotY += baseRotY + velocityX;
       dynamicMotionRef.rotX += velocityX;
       dynamicMotionRef.velocityX *= 0.96;
       dynamicMotionRef.velocityY *= 0.96;
       dynamicMotionRef.rotX = Math.max(Math.min(dynamicMotionRef.rotX, Math.PI / 3), -Math.PI / 3);
 
-      const cx = currentWidth / 2;
-      const cy = currentHeight / 2;
-      let proximityBoost = 1;
-
+      // Mouse Interaction
       if (mouse.active) {
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
         const dx = mouse.x - cx;
         const dy = mouse.y - cy;
         const d = Math.sqrt(dx * dx + dy * dy);
-        const proximity = Math.max(0, 1 - d / (Math.min(currentWidth, currentHeight) / 2));
-        proximityBoost = 1 + proximity * 2;
+        const proximity = Math.max(0, 1 - d / (Math.min(canvas.width, canvas.height) / 2));
+        const proximityBoost = 1 + proximity * 2;
         dynamicMotionRef.rotY += dx * 0.000001 * proximity;
         dynamicMotionRef.rotX -= dy * 0.000001 * proximity;
       }
 
-      const COLOR = getColor(); // Color updates based on ref value
+      const COLOR = getColor();
+      const points = stateRef.points;
+      const RADIUS = stateRef.RADIUS;
 
       for (let i = 0; i < points.length; i++) {
         const p = points[i];
@@ -302,30 +171,12 @@ const IntelligentEmergence = () => {
         const wave = Math.sin(dist / 10 - t * 0.1);
         const amp = wave * 6 * pulse;
         
-        // Pass the updated rotation values from the ref to project
         const pr = project({ x: p.x, y: p.y, z: p.z + amp }, dynamicMotionRef.rotY, dynamicMotionRef.rotX);
 
-        if (mouse.active) {
-          const dx = pr.px - mouse.x;
-          const dy = pr.py - mouse.y;
-          const d = Math.sqrt(dx * dx + dy * dy);
-          const influenceRadius = 220;
-          if (d < influenceRadius) {
-            const strength = Math.pow(1 - d / influenceRadius, 2.5) * 8 * proximityBoost;
-            p.offsetX = (p.offsetX - dx * 0.01 * strength) * 0.9;
-            p.offsetY = (p.offsetY - dy * 0.01 * strength) * 0.9;
-          } else {
-            p.offsetX *= 0.9;
-            p.offsetY *= 0.9;
-          }
-        } else {
-          p.offsetX *= 0.9;
-          p.offsetY *= 0.9;
-        }
-
+        // Render Point
         const depthBias = Math.pow(pr.scale, 1.5);
         const size = MAX_DOT_RADIUS * pr.scale * (1 + depthBias * 0.8);
-
+        
         ctx.beginPath();
         ctx.fillStyle = COLOR;
         ctx.globalAlpha = (0.25 + 0.75 * (1 - dist / RADIUS)) * pr.scale;
@@ -336,124 +187,117 @@ const IntelligentEmergence = () => {
       ctx.globalAlpha = 1;
       t += 1;
       animationId = requestAnimationFrame(draw);
-    }
+    };
 
-    let animationId = requestAnimationFrame(draw);
+    // Start Animation
+    animationId = requestAnimationFrame(draw);
 
-    // Cleanup: Cancel animation frame and remove listeners
+    // Event Listeners for Interaction
+    const handleMouseMove = (e) => { 
+      const rect = canvas.getBoundingClientRect();
+      const mouse = dynamicMotionRef.mouse;
+      mouse.x = e.clientX - rect.left;
+      mouse.y = e.clientY - rect.top;
+      mouse.active = true;
+      if (dynamicMotionRef.isDragging) {
+        const dx = e.clientX - dynamicMotionRef.lastX;
+        const dy = e.clientY - dynamicMotionRef.lastY;
+        dynamicMotionRef.velocityY = -dx * 0.002;
+        dynamicMotionRef.velocityX = dy * 0.002;
+        dynamicMotionRef.lastX = e.clientX;
+        dynamicMotionRef.lastY = e.clientY;
+      }
+    };
+    const handleMouseDown = (e) => { dynamicMotionRef.isDragging = true; dynamicMotionRef.lastX = e.clientX; dynamicMotionRef.lastY = e.clientY; };
+    const handleMouseUp = () => { dynamicMotionRef.isDragging = false; };
+    
+    canvas.addEventListener("mousemove", handleMouseMove);
+    canvas.addEventListener("mousedown", handleMouseDown);
+    canvas.addEventListener("mouseup", handleMouseUp);
+    
+    // Cleanup function
     return () => {
       cancelAnimationFrame(animationId);
+      window.removeEventListener('resize', updateSize);
       canvas.removeEventListener("mousemove", handleMouseMove);
       canvas.removeEventListener("mousedown", handleMouseDown);
       canvas.removeEventListener("mouseup", handleMouseUp);
-      canvas.removeEventListener("mouseleave", handleMouseLeave);
-      canvas.removeEventListener("touchstart", handleTouchStart);
-      canvas.removeEventListener("touchmove", handleTouchMove);
-      canvas.removeEventListener("touchend", handleTouchEnd);
-      canvas.removeEventListener("touchcancel", handleTouchEnd);
     };
-  }, []); // Runs once
+  }, [view]); // Re-run this effect when 'view' changes
 
-  // --- STANDARD HOME VIEW RENDER ---
+  // --- CONDITIONAL RENDERING (AT THE END) ---
+  if (view === 'wave') {
+    return (
+      <div className="w-screen h-screen relative">
+        <ComputationalWaveField />
+        <button
+          onClick={handleGoHome}
+          className="fixed top-4 left-4 z-50 px-4 py-2 bg-white/10 text-white border border-white/30 rounded-lg backdrop-blur-sm hover:bg-white/20 transition-all text-sm"
+        >
+          ← Back to Studio
+        </button>
+      </div>
+    );
+  }
+
+  // --- HOME VIEW RENDER ---
   return (
     <div className="relative w-screen min-h-screen bg-[#0a0a0f] overflow-x-hidden">
-      {/* Fixed Canvas Background */}
       <div className="fixed inset-0 flex items-center justify-center w-screen h-screen opacity-70" style={{ zIndex: 0 }}>
-        <canvas
-          ref={canvasRef}
-          style={{ cursor: "grab" }}
-        />
+        <canvas ref={canvasRef} style={{ cursor: "grab" }} />
       </div>
-            
-      {/* Content Layer */}
       <div className="relative z-10 text-white pointer-events-none">
-        {/* Hero Section */}
         <div className="min-h-screen flex flex-col items-center justify-center px-8">
           <div className="max-w-4xl text-center space-y-6">
-            <h1 className="text-7xl md:text-8xl font-light tracking-tight">
-              s ‹ tudio › s
-            </h1>
-            <p className="text-xl md:text-2xl font-light text-gray-300 tracking-wide">
-              Systems · Emergence · Transformation
-            </p>
-            <div className="pt-8 text-xl text-gray-500 font-mono">
-              ↓
-            </div>
+            <h1 className="text-7xl md:text-8xl font-light tracking-tight">s ‹ tudio › s</h1>
+            <p className="text-xl md:text-2xl font-light text-gray-300 tracking-wide">Systems · Emergence · Transformation</p>
+            <div className="pt-8 text-xl text-gray-500 font-mono">↓</div>
           </div>
         </div>
-        
-        {/* About Section */}
         <div className="min-h-screen flex items-center justify-center px-8">
           <div className="max-w-2xl space-y-8 bg-black/30 backdrop-blur-sm p-12 rounded-lg border border-white/10 pointer-events-auto">
             <h2 className="text-4xl font-light">Intelligent Design</h2>
-            <p className="text-lg text-gray-300 leading-relaxed">
-              We create systems that think, adapt, and evolve. The pattern you see isn't just decoration—it's responding to you. Its symmetry grows with your engagement, its colors shift with your journey, its complexity emerges from your curiosity.
-            </p>
-            <p className="text-lg text-gray-300 leading-relaxed">
-              This is design as conversation. Mathematics as communication. Beauty as intelligence.
-            </p>
+            <p className="text-lg text-gray-300 leading-relaxed">We create systems that think, adapt, and evolve.</p>
             <div className="pt-6 grid grid-cols-3 gap-6 text-sm font-mono text-gray-400">
-              {/* Note: I'm approximating symmetry growth based on available variables */}
               <div>Symmetry: {Math.floor(3 + scrollDepth * 3 + Math.min(sessionTime / 60, 1) * 2)}-fold</div>
               <div>Depth: {Math.floor(scrollDepth * 100)}%</div>
               <div>Time: {Math.floor(sessionTime)}s</div>
             </div>
           </div>
         </div>
-        
-        {/* Work Section */}
         <div className="min-h-screen flex items-center justify-center px-8">
           <div className="max-w-3xl space-y-12">
             <h2 className="text-5xl font-light text-center mb-16">Selected Work</h2>
-                        <div className="space-y-8 pointer-events-auto">
+            <div className="space-y-8 pointer-events-auto">
               {[
                 { title: 'Adaptive Systems', desc: 'Platforms that learn and evolve with their users' },
                 { title: 'Emergent Interfaces', desc: 'UI that responds to context and intent' },
-                // 4. THE ACTION: This links the click event to the routing function
                 { title: 'Computational Design', desc: 'Where algorithm meets aesthetics', action: () => setView('wave') }
               ].map((project, i) => (
                 <div 
                   key={i}
-                  // ADDED: onClick handler to switch the view
                   onClick={project.action || (() => {})} 
                   className={`bg-black/20 backdrop-blur-sm p-8 rounded-lg border border-white/10 hover:border-white/30 transition-all cursor-pointer ${project.action ? 'hover:scale-[1.01] transition-transform' : ''}`}
                 >
                   <h3 className="text-2xl font-light mb-3">{project.title}</h3>
                   <p className="text-gray-400">{project.desc}</p>
-                  {project.action && (
-                      <span className="mt-2 inline-block text-sm text-indigo-400">→ View Interactive Demo</span>
-                  )}
+                  {project.action && <span className="mt-2 inline-block text-sm text-indigo-400">→ View Interactive Demo</span>}
                 </div>
               ))}
             </div>
           </div>
         </div>
-        
-        {/* Contact Section */}
         <div className="min-h-screen flex items-center justify-center px-8">
           <div className="max-w-2xl text-center space-y-8">
             <h2 className="text-5xl font-light">Let's Build Something Intelligent</h2>
-            <p className="text-xl text-gray-300">
-              Systems that adapt. Designs that respond. Experiences that emerge.
-            </p>
             <div className="pt-8">
-              <a 
-                href="mailto:hello@studiostruweg.com"
-                className="inline-block px-8 py-4 border border-white/30 rounded-full hover:bg-white/10 transition-all text-lg pointer-events-auto"
-              >
-                Start a Conversation
-              </a>
+              <a href="mailto:hello@studiostruweg.com" className="inline-block px-8 py-4 border border-white/30 rounded-full hover:bg-white/10 transition-all text-lg pointer-events-auto">Start a Conversation</a>
             </div>
           </div>
         </div>
-        
-        {/* Footer */}
-        <div className="py-16 text-center text-gray-500 text-sm font-mono">
-          <p>© 2025 Studio Struweg · Intelligent by Design</p>
-        </div>
+        <div className="py-16 text-center text-gray-500 text-sm font-mono"><p>© 2025 Studio Struweg · Intelligent by Design</p></div>
       </div>
     </div>
   );
 };
-
 export default IntelligentEmergence;
