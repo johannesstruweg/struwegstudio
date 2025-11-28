@@ -162,7 +162,7 @@ const StudioStruweg = () => {
       let y2 = y * cosX - z * sinX;
       let z2 = z * cosX + y * sinX;
 
-      const depth = 500;
+      const depth = 5000;
       const scale = depth / (depth + z2);
       const px = width / 2 + x * scale;
       const py = height / 2 + y2 * scale;
