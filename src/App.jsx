@@ -78,11 +78,25 @@ const IntelligentEmergence = () => {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // 1. Resize Handler
+    // 1. Resize Handler with DPI Scaling
     const updateSize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      stateRef.RADIUS = Math.min(canvas.width, canvas.height) * 0.4;
+      const dpr = window.devicePixelRatio || 1;
+      // Set actual size in memory (scaled to account for extra pixel density)
+      canvas.width = window.innerWidth * dpr;
+      canvas.height = window.innerHeight * dpr;
+      
+      // Normalize coordinate system to use css pixels
+      ctx.scale(dpr, dpr);
+
+      // Set visible size in DOM
+      canvas.style.width = `${window.innerWidth}px`;
+      canvas.style.height = `${window.innerHeight}px`;
+
+      // Use logical window dimensions for calculations
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+
+      stateRef.RADIUS = Math.min(width, height) * 0.4;
       
       // Initialize points if needed
       if (stateRef.points.length !== POINTS) {
@@ -108,9 +122,12 @@ const IntelligentEmergence = () => {
     // 2. Animation Loop Helpers
     const getColor = () => {
       const currentScrollDepth = dynamicPropsRef.scrollDepth;
+      // Hue shifts from Blue (220) -> Purple -> Pink
       const hue = 220 - (currentScrollDepth * 80);
+      // Saturation increases with scroll
       const saturation = 70 + (currentScrollDepth * 20);
-      return `hsl(${hue}, 70%, ${saturation}%)`;
+      // Fixed lightness at 30% for deep, rich colors (FIX: was previously using saturation var for lightness)
+      return `hsl(${hue}, ${saturation}%, 30%)`;
     };
 
     function project(p, rotY, rotX) {
@@ -124,7 +141,12 @@ const IntelligentEmergence = () => {
       let y2 = y * cosX - z * sinX;
       let z2 = z * cosX + y * sinX;
       const scale = PERSPECTIVE_DEPTH / (PERSPECTIVE_DEPTH + z2);
-      return { px: canvas.width / 2 + x * scale, py: canvas.height / 2 + y2 * scale, scale, z: z2 };
+      
+      // Project using logical window dimensions
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      
+      return { px: width / 2 + x * scale, py: height / 2 + y2 * scale, scale, z: z2 };
     }
 
     let t = 0;
@@ -134,8 +156,8 @@ const IntelligentEmergence = () => {
     const draw = () => {
       if (!ctx) return;
       
-      // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Clear canvas using logical dimensions
+      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
 
       // Access Refs
       const { baseRotY, velocityX, velocityY, rotX, rotY, mouse } = dynamicMotionRef;
@@ -150,12 +172,14 @@ const IntelligentEmergence = () => {
 
       // Mouse Interaction
       if (mouse.active) {
-        const cx = canvas.width / 2;
-        const cy = canvas.height / 2;
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const cx = width / 2;
+        const cy = height / 2;
         const dx = mouse.x - cx;
         const dy = mouse.y - cy;
         const d = Math.sqrt(dx * dx + dy * dy);
-        const proximity = Math.max(0, 1 - d / (Math.min(canvas.width, canvas.height) / 2));
+        const proximity = Math.max(0, 1 - d / (Math.min(width, height) / 2));
         const proximityBoost = 1 + proximity * 2;
         dynamicMotionRef.rotY += dx * 0.000001 * proximity;
         dynamicMotionRef.rotX -= dy * 0.000001 * proximity;
@@ -228,7 +252,7 @@ const IntelligentEmergence = () => {
   // --- CONDITIONAL RENDERING (AT THE END) ---
   if (view === 'wave') {
     return (
-      <div className="w-screen h-screen relative">
+      <div className="fixed inset-0 w-full h-full z-50 bg-[#0a0a0f]">
         <ComputationalWaveField />
         <button
           onClick={handleGoHome}
