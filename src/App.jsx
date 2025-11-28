@@ -322,7 +322,7 @@ const IntelligentEmergence = () => {
             <p className="text-xl md:text-2xl font-light text-gray-300 tracking-wide">
               Systems · Emergence · Transformation
             </p>
-            <div className="pt-8 text-sm text-gray-500 font-mono">
+            <div className="pt-8 text-xl text-gray-500 font-mono">
               ↓
             </div>
           </div>
