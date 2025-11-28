@@ -317,13 +317,13 @@ const IntelligentEmergence = () => {
         <div className="min-h-screen flex flex-col items-center justify-center px-8">
           <div className="max-w-4xl text-center space-y-6">
             <h1 className="text-7xl md:text-8xl font-light tracking-tight">
-              Studio Struweg
+              Studio/S
             </h1>
             <p className="text-xl md:text-2xl font-light text-gray-300 tracking-wide">
               Systems · Emergence · Transformation
             </p>
             <div className="pt-8 text-sm text-gray-500 font-mono">
-              Scroll to explore
+              ↓
             </div>
           </div>
         </div>
