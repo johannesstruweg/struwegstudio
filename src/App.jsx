@@ -1,16 +1,32 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-// Use a ref to store the stable point array and initial setup variables
+// Stable Ref for point cloud data and parameters that should not be recalculated on every scroll update.
 const stateRef = {
   points: [],
   RADIUS: 0,
 };
 
-const StudioStruweg = () => {
+// Configuration constants for the point cloud visualization
+const PERSPECTIVE_DEPTH = 2000; // Viewer distance (2000 for "further away")
+const MAX_DOT_RADIUS = 3;       // Max dot size (3px radius / 6px diameter)
+const POINTS = 1500;            // Number of points in the cloud
+
+const IntelligentEmergence = () => {
   const canvasRef = useRef(null);
   const [scrollDepth, setScrollDepth] = useState(0);
+  const [sessionTime, setSessionTime] = useState(0);
 
-  // --- Scroll Listener (No Change) ---
+  // --- 1. Session Timer Effect ---
+  // Updates the session time every second.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setSessionTime(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // --- 2. Scroll Listener Effect ---
+  // Calculates the scroll depth (0 to 1) and updates state.
   useEffect(() => {
     const handleScroll = () => {
       const winScroll = document.documentElement.scrollTop;
@@ -22,11 +38,12 @@ const StudioStruweg = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // --- 1. Initialization Effect: Runs ONCE to setup points and size ---
+  // --- 3. Initialization Effect: Runs ONCE to setup points and resize listener ---
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    // Function to set canvas size and initialize/update RADIUS and POINTS
     const updateSize = () => {
       // Set canvas dimensions to the current window size
       canvas.width = window.innerWidth;
@@ -38,11 +55,9 @@ const StudioStruweg = () => {
       // Update global state/ref variables on resize
       stateRef.RADIUS = Math.min(width, height) * 0.4;
 
-      // Re-initialize points only if they haven't been created yet OR if the 
-      // radius changed due to a legitimate resize (not scroll bar flicker).
-      if (stateRef.points.length === 0 || stateRef.points.length !== 1500) {
+      // Re-initialize points if they haven't been created yet
+      if (stateRef.points.length !== POINTS) {
         stateRef.points = [];
-        const POINTS = 1500;
         
         // Build points in sphere
         for (let i = 0; i < POINTS; i++) {
@@ -63,9 +78,9 @@ const StudioStruweg = () => {
 
     // Cleanup: Remove resize listener
     return () => window.removeEventListener('resize', updateSize);
-  }, []); // <-- Dependency array is empty! This runs once.
+  }, []); // Dependency array is empty: runs once.
 
-  // --- 2. Animation Effect: Runs on mount and on scrollDepth change ---
+  // --- 4. Animation Effect: Runs on mount and whenever scroll/time changes color/speed ---
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || stateRef.points.length === 0) return;
@@ -77,15 +92,11 @@ const StudioStruweg = () => {
     const points = stateRef.points;
     const RADIUS = stateRef.RADIUS;
 
-    // Use current canvas dimensions (they are set in the initialization effect)
+    // Use current canvas dimensions 
     const width = canvas.width;
     const height = canvas.height;
 
-    // Adjust this variable to change viewer distance (e.g., 500 or 2000 as discussed)
-    const PERSPECTIVE_DEPTH = 2000; 
-    const MAX_DOT_RADIUS = 3; 
-
-    // Color shifts based on scroll depth
+    // Color shifts based on scroll depth (Only color changes on scroll, not geometry)
     const getColor = () => {
       const hue = 220 - (scrollDepth * 80); // Blue -> Purple -> Pink
       const saturation = 70 + (scrollDepth * 20);
@@ -100,8 +111,8 @@ const StudioStruweg = () => {
     const baseRotY = 0.002;
     const mouse = { x: 0, y: 0, active: false };
 
-    // --- Interaction Handlers (Simplified for brevity, assuming original logic is correct) ---
-    const handleMouseMove = (e) => { /* ... original logic ... */
+    // --- Interaction Handlers ---
+    const handleMouseMove = (e) => { 
       const rect = canvas.getBoundingClientRect();
       mouse.x = e.clientX - rect.left;
       mouse.y = e.clientY - rect.top;
@@ -193,7 +204,8 @@ const StudioStruweg = () => {
       
       ctx.clearRect(0, 0, currentWidth, currentHeight);
 
-      const pulse = Math.sin(t * 0.04) * 0.3 + 0.7;
+      // Pulse rate is slightly affected by session time to keep it dynamic
+      const pulse = Math.sin(t * 0.04 + sessionTime * 0.01) * 0.3 + 0.7;
 
       rotY += baseRotY + velocityY;
       rotX += velocityX;
@@ -221,10 +233,25 @@ const StudioStruweg = () => {
         const dist = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
         const wave = Math.sin(dist / 10 - t * 0.1);
         const amp = wave * 6 * pulse;
-        // Use the stable RADIUS from the ref
         const pr = project({ x: p.x, y: p.y, z: p.z + amp }, rotY, rotX);
 
-        // ... Mouse interaction logic ...
+        if (mouse.active) {
+          const dx = pr.px - mouse.x;
+          const dy = pr.py - mouse.y;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          const influenceRadius = 220;
+          if (d < influenceRadius) {
+            const strength = Math.pow(1 - d / influenceRadius, 2.5) * 8 * proximityBoost;
+            p.offsetX = (p.offsetX - dx * 0.01 * strength) * 0.9;
+            p.offsetY = (p.offsetY - dy * 0.01 * strength) * 0.9;
+          } else {
+            p.offsetX *= 0.9;
+            p.offsetY *= 0.9;
+          }
+        } else {
+          p.offsetX *= 0.9;
+          p.offsetY *= 0.9;
+        }
 
         const depthBias = Math.pow(pr.scale, 1.5);
         const size = MAX_DOT_RADIUS * pr.scale * (1 + depthBias * 0.8);
@@ -255,40 +282,96 @@ const StudioStruweg = () => {
       canvas.removeEventListener("touchend", handleTouchEnd);
       canvas.removeEventListener("touchcancel", handleTouchEnd);
     };
-  }, [scrollDepth]); // <-- This now only controls animation start/stop and color updates
+  }, [scrollDepth, sessionTime]); // Re-run effect when color/pulse rate needs updating
 
   return (
-    <div className="relative w-screen min-h-screen bg-black overflow-x-hidden">
+    <div className="relative w-screen min-h-screen bg-[#0a0a0f] overflow-x-hidden">
       {/* Fixed Canvas Background */}
-      <div className="fixed inset-0 flex items-center justify-center w-screen h-screen" style={{ zIndex: 0 }}>
+      <div className="fixed inset-0 flex items-center justify-center w-screen h-screen opacity-70" style={{ zIndex: 0 }}>
         <canvas
           ref={canvasRef}
           style={{ cursor: "grab" }}
-          className="opacity-70"
         />
       </div>
-      
+            
       {/* Content Layer */}
-      <div className="relative z-10 text-white pointer-events-none">
-        {/* Hero Section - Centered */}
-        <div className="min-h-screen flex flex-col items-center justify-center px-6">
-          <div className="text-center space-y-8">
-            <h1 className="text-5xl sm:text-6xl md:text-7xl font-normal tracking-tight leading-tight">
-              Let's Build Something Intelligent
+      <div className="relative z-10 text-white">
+        {/* Hero Section */}
+        <div className="min-h-screen flex flex-col items-center justify-center px-8">
+          <div className="max-w-4xl text-center space-y-6">
+            <h1 className="text-7xl md:text-8xl font-light tracking-tight">
+              Studio Struweg
             </h1>
-            <p className="text-lg sm:text-xl md:text-2xl font-light text-gray-300 max-w-3xl mx-auto leading-relaxed">
-              Systems that adapt. Designs that respond. Experiences that emerge.
+            <p className="text-xl md:text-2xl font-light text-gray-300 tracking-wide">
+              Systems · Emergence · Transformation
             </p>
-            <div className="pt-8 pointer-events-auto">
-              <button className="px-8 py-3 border border-white/40 rounded-full text-base font-light hover:bg-white/5 transition-all">
-                Start a Conversation
-              </button>
+            <div className="pt-8 text-sm text-gray-500 font-mono">
+              Scroll to explore
             </div>
           </div>
         </div>
-
+        
+        {/* About Section */}
+        <div className="min-h-screen flex items-center justify-center px-8">
+          <div className="max-w-2xl space-y-8 bg-black/30 backdrop-blur-sm p-12 rounded-lg border border-white/10">
+            <h2 className="text-4xl font-light">Intelligent Design</h2>
+            <p className="text-lg text-gray-300 leading-relaxed">
+              We create systems that think, adapt, and evolve. The pattern you see isn't just decoration—it's responding to you. Its symmetry grows with your engagement, its colors shift with your journey, its complexity emerges from your curiosity.
+            </p>
+            <p className="text-lg text-gray-300 leading-relaxed">
+              This is design as conversation. Mathematics as communication. Beauty as intelligence.
+            </p>
+            <div className="pt-6 grid grid-cols-3 gap-6 text-sm font-mono text-gray-400">
+              {/* Note: I'm approximating symmetry growth based on available variables */}
+              <div>Symmetry: {Math.floor(3 + scrollDepth * 3 + Math.min(sessionTime / 60, 1) * 2)}-fold</div>
+              <div>Depth: {Math.floor(scrollDepth * 100)}%</div>
+              <div>Time: {Math.floor(sessionTime)}s</div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Work Section */}
+        <div className="min-h-screen flex items-center justify-center px-8">
+          <div className="max-w-3xl space-y-12">
+            <h2 className="text-5xl font-light text-center mb-16">Selected Work</h2>
+                        <div className="space-y-8">
+              {[
+                { title: 'Adaptive Systems', desc: 'Platforms that learn and evolve with their users' },
+                { title: 'Emergent Interfaces', desc: 'UI that responds to context and intent' },
+                { title: 'Computational Design', desc: 'Where algorithm meets aesthetics' }
+              ].map((project, i) => (
+                <div 
+                  key={i}
+                  className="bg-black/20 backdrop-blur-sm p-8 rounded-lg border border-white/10 hover:border-white/30 transition-all cursor-pointer"
+                >
+                  <h3 className="text-2xl font-light mb-3">{project.title}</h3>
+                  <p className="text-gray-400">{project.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        
+        {/* Contact Section */}
+        <div className="min-h-screen flex items-center justify-center px-8">
+          <div className="max-w-2xl text-center space-y-8">
+            <h2 className="text-5xl font-light">Let's Build Something Intelligent</h2>
+            <p className="text-xl text-gray-300">
+              Systems that adapt. Designs that respond. Experiences that emerge.
+            </p>
+            <div className="pt-8">
+              <a 
+                href="mailto:hello@studiostruweg.com"
+                className="inline-block px-8 py-4 border border-white/30 rounded-full hover:bg-white/10 transition-all text-lg"
+              >
+                Start a Conversation
+              </a>
+            </div>
+          </div>
+        </div>
+        
         {/* Footer */}
-        <div className="pb-8 text-center text-gray-500 text-xs font-light">
+        <div className="py-16 text-center text-gray-500 text-sm font-mono">
           <p>© 2025 Studio Struweg · Intelligent by Design</p>
         </div>
       </div>
@@ -296,4 +379,4 @@ const StudioStruweg = () => {
   );
 };
 
-export default StudioStruweg;
+export default IntelligentEmergence;
