@@ -34,11 +34,10 @@ const MAX_DOT_RADIUS = 3;       // Max dot size (3px radius / 6px diameter)
 const POINTS = 1500;            // Number of points in the cloud
 
 const IntelligentEmergence = () => {
+  // --- 1. UNCONDITIONAL HOOKS (MUST BE CALLED FIRST) ---
   const canvasRef = useRef(null);
   const [scrollDepth, setScrollDepth] = useState(0); // Kept for content rendering
   const [sessionTime, setSessionTime] = useState(0); // Kept for content rendering
-  
-  // 2. STATE FOR ROUTING: Manages the current view ('home' or 'wave')
   const [view, setView] = useState('home'); 
 
   // Function to switch view back to home
@@ -65,10 +64,9 @@ const IntelligentEmergence = () => {
       );
   }
 
-  // --- STANDARD HOME VIEW EFFECTS START HERE ---
-
-  // --- 1. Session Timer Effect ---
-  // Updates the session time every second and updates the ref.
+  // --- 4. CONDITIONAL EFFECTS FOR HOME VIEW ONLY ---
+  
+  // --- 4a. Session Timer Effect (Runs always, but updates ref) ---
   useEffect(() => {
     const timer = setInterval(() => {
       setSessionTime(prev => {
@@ -80,9 +78,11 @@ const IntelligentEmergence = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // --- 2. Scroll Listener Effect ---
-  // Calculates the scroll depth (0 to 1), updates state for UI, and updates the ref for animation.
+  // --- 4b. Scroll Listener Effect (Runs only when view is 'home') ---
   useEffect(() => {
+    // Only attach listeners if we are on the home view (though state controls the UI, this ensures listeners are removed when switching away)
+    if (view !== 'home') return;
+
     const handleScroll = () => {
       const winScroll = document.documentElement.scrollTop;
       const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
@@ -96,34 +96,31 @@ const IntelligentEmergence = () => {
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [view]); // Dependency on view ensures cleanup/re-attach when switching pages
 
-  // --- 3. Initialization Effect: Runs ONCE to setup points and resize listener ---
+  // --- 4c. Initialization Effect (Runs only when view is 'home') ---
   useEffect(() => {
+    if (view !== 'home') return;
+    
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     // Function to set canvas size and initialize/update RADIUS and POINTS
     const updateSize = () => {
-      // Set canvas dimensions to the current window size
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
       
       const width = canvas.width;
       const height = canvas.height;
       
-      // Update global state/ref variables on resize
       stateRef.RADIUS = Math.min(width, height) * 0.4;
 
-      // Re-initialize points if they haven't been created yet
       if (stateRef.points.length !== POINTS) {
         stateRef.points = [];
         
-        // Build points in sphere
         for (let i = 0; i < POINTS; i++) {
           const theta = Math.acos(2 * Math.random() - 1);
           const phi = 2 * Math.PI * Math.random();
-          // Use the new RADIUS from the ref
           const r = stateRef.RADIUS * Math.cbrt(Math.random());
           const x = r * Math.sin(theta) * Math.cos(phi);
           const y = r * Math.sin(theta) * Math.sin(phi);
@@ -138,25 +135,23 @@ const IntelligentEmergence = () => {
 
     // Cleanup: Remove resize listener
     return () => window.removeEventListener('resize', updateSize);
-  }, []); // Dependency array is empty: runs once.
+  }, [view]); // Dependency on view
 
-  // --- 4. Animation Effect: Runs ONCE to start the persistent draw loop ---
+  // --- 4d. Animation Effect (Runs only when view is 'home') ---
   useEffect(() => {
+    if (view !== 'home') return;
+    
     const canvas = canvasRef.current;
     if (!canvas || stateRef.points.length === 0) return;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     
-    // Retrieve the stable point array and radius
     const points = stateRef.points;
     const RADIUS = stateRef.RADIUS;
-
-    // Use current canvas dimensions 
     const width = canvas.width;
     const height = canvas.height;
 
-    // Color shifts based on current ref value (updated by scroll listener)
     const getColor = () => {
       const currentScrollDepth = dynamicPropsRef.scrollDepth;
       const hue = 220 - (currentScrollDepth * 80); // Blue -> Purple -> Pink
@@ -361,8 +356,9 @@ const IntelligentEmergence = () => {
       canvas.removeEventListener("touchend", handleTouchEnd);
       canvas.removeEventListener("touchcancel", handleTouchEnd);
     };
-  }, []); // Dependency array is EMPTY: runs once.
+  }, [view]); // Dependency on view
 
+  // --- STANDARD HOME VIEW RENDER ---
   return (
     <div className="relative w-screen min-h-screen bg-[#0a0a0f] overflow-x-hidden">
       {/* Fixed Canvas Background */}
